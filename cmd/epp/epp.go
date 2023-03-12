@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/net/proxy"
 
-	"github.com/domainr/epp"
+	"github.com/onasunnymorning/eppclient"
 	"github.com/wsxiaoys/terminal/color"
 )
 
