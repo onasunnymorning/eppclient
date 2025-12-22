@@ -39,8 +39,8 @@ brews:
   - name: epp
     description: "EPP command-line tool"
     homepage: "https://github.com/onasunnymorning/eppclient"
-    folder: Formula
-    tap:
+    directory: Formula
+    repository:
       owner: onasunnymorning
       name: homebrew-tap
     install: |
