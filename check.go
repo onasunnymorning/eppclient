@@ -221,14 +221,24 @@ type DomainCheck struct {
 
 // DomainCharge represents various EPP charge and fee extension data.
 type DomainCharge struct {
-	Domain        string
-	Category      string
-	CategoryName  string
-	CreatePrice   string
-	RenewPrice    string
-	RestorePrice  string
-	TransferPrice string
-	Currency      string
+	Domain       string
+	Category     string
+	CategoryName string
+	Currency     string
+	Fees         []Fee
+}
+
+// Fee represents an individual fee item with its attributes.
+type Fee struct {
+	Name        string // "create", "renew", etc.
+	Amount      string
+	Currency    string
+	Period      int
+	Unit        string
+	Description string
+	Refundable  bool
+	GracePeriod string
+	Standard    bool
 }
 
 func init() {
@@ -273,6 +283,7 @@ func init() {
 		return nil
 	})
 
+	// Scan fee-0.5 extension into Charges
 	path = "epp > response > extension > " + ExtFee05 + " chkData"
 	scanResponse.MustHandleStartElement(path+">cd", func(c *xx.Context) error {
 		dcr := &c.Value.(*Response).DomainCheckResponse
@@ -297,7 +308,12 @@ func init() {
 	scanResponse.MustHandleCharData(path+">cd>fee", func(c *xx.Context) error {
 		charges := c.Value.(*Response).DomainCheckResponse.Charges
 		charge := &charges[len(charges)-1]
-		charge.CategoryName = c.Attr("", "description")
+		charge.CategoryName = c.Attr("", "description") // For 0.5 we use this as CategoryName to keep tests passing
+		charge.Fees = append(charge.Fees, Fee{
+			Name:        "create", // Default for 0.5
+			Amount:      string(c.CharData),
+			Description: c.Attr("", "description"),
+		})
 		return nil
 	})
 
@@ -325,6 +341,16 @@ func init() {
 		default:
 			charge.Category = "premium"
 		}
+		return nil
+	})
+	scanResponse.MustHandleCharData(path+">cd>fee", func(c *xx.Context) error {
+		charges := c.Value.(*Response).DomainCheckResponse.Charges
+		charge := &charges[len(charges)-1]
+		charge.Fees = append(charge.Fees, Fee{
+			Name:        "create", // Default fallback
+			Amount:      string(c.CharData),
+			Description: c.Attr("", "description"),
+		})
 		return nil
 	})
 
@@ -395,6 +421,12 @@ func init() {
 		dcr.Charges = append(dcr.Charges, DomainCharge{})
 		return nil
 	})
+	scanResponse.MustHandleCharData(path+">cd>objID", func(c *xx.Context) error {
+		charges := c.Value.(*Response).DomainCheckResponse.Charges
+		charge := &charges[len(charges)-1]
+		charge.Domain = string(c.CharData)
+		return nil
+	})
 	scanResponse.MustHandleCharData(path+">cd>name", func(c *xx.Context) error {
 		charges := c.Value.(*Response).DomainCheckResponse.Charges
 		charge := &charges[len(charges)-1]
@@ -412,21 +444,16 @@ func init() {
 	scanResponse.MustHandleCharData(path+">cd>command>fee", func(c *xx.Context) error {
 		charges := c.Value.(*Response).DomainCheckResponse.Charges
 		charge := &charges[len(charges)-1]
-		if charge.CategoryName == "" {
-			charge.CategoryName = c.Attr("", "description") // Fallback
-		}
 
-		cmdName := c.Parent.Attr("", "name")
-		switch cmdName {
-		case "create":
-			charge.CreatePrice = string(c.CharData)
-		case "renew":
-			charge.RenewPrice = string(c.CharData)
-		case "restore":
-			charge.RestorePrice = string(c.CharData)
-		case "transfer":
-			charge.TransferPrice = string(c.CharData)
+		fee := Fee{
+			Name:        c.Parent.Attr("", "name"),
+			Standard:    c.Parent.AttrBool("", "standard"),
+			Amount:      string(c.CharData),
+			Description: c.Attr("", "description"),
+			Refundable:  c.AttrBool("", "refundable"),
+			GracePeriod: c.Attr("", "grace-period"),
 		}
+		charge.Fees = append(charge.Fees, fee)
 		return nil
 	})
 	scanResponse.MustHandleCharData(path+">cd>currency", func(c *xx.Context) error {
@@ -454,9 +481,20 @@ func init() {
 		charge.Category = string(c.CharData)
 		return nil
 	})
+	scanResponse.MustHandleCharData(path+">cd>command>fee", func(c *xx.Context) error {
+		charges := c.Value.(*Response).DomainCheckResponse.Charges
+		charge := &charges[len(charges)-1]
+		charge.Fees = append(charge.Fees, Fee{
+			Name:        c.Parent.Attr("", "name"),
+			Amount:      string(c.CharData),
+			Description: c.Attr("", "description"),
+		})
+		return nil
+	})
 
 	// Scan fee-0.21 phase and subphase into Charges Category and CategoryName, respectively
 	// FIXME: stop mangling fee extensions into charges
+	// Scan fee-0.21 phase and subphase into Charges Category and CategoryName, respectively
 	path = "epp > response > extension > " + ExtFee21 + " chkData > cd > command > fee"
 	scanResponse.MustHandleCharData(path, func(c *xx.Context) error {
 		if c.Parent.Attr("", "name") != "create" {
@@ -468,6 +506,13 @@ func init() {
 			Domain:       check.Domain,
 			Category:     c.Parent.Attr("", "phase"),
 			CategoryName: c.Parent.Attr("", "subphase"),
+			Fees: []Fee{
+				{
+					Name:        "create",
+					Amount:      string(c.CharData),
+					Description: c.Parent.Attr("", "subphase"),
+				},
+			},
 		}
 		dcr.Charges = append(dcr.Charges, charge)
 		return nil

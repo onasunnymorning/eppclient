@@ -123,7 +123,7 @@ func (c *Conn) readResponse() (*Response, error) {
 		return nil, err
 	}
 
-	logXML("<-- READ DATA UNIT -->", body)
+	logXML("RESPONSE", body)
 
 	res := &Response{}
 	// Decode from the body
@@ -165,7 +165,7 @@ func (c *Conn) ReadRaw() ([]byte, error) {
 		return nil, err
 	}
 
-	logXML("<-- READ DATA UNIT -->", body)
+	logXML("RESPONSE", body)
 	return body, nil
 }
 
@@ -174,7 +174,7 @@ func (c *Conn) ReadRaw() ([]byte, error) {
 // of the data unit (message + 4 byte header), in network (big-endian) order.
 // http://www.ietf.org/rfc/rfc4934.txt
 func writeDataUnit(w io.Writer, x []byte) error {
-	logXML("<-- WRITE DATA UNIT -->", x)
+	logXML("REQUEST", x)
 	s := uint32(4 + len(x))
 	err := binary.Write(w, binary.BigEndian, s)
 	if err != nil {

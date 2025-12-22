@@ -53,5 +53,7 @@ func TestScanCheckDomainResponseWithPremiumAttributeWithFee10(t *testing.T) {
 	st.Expect(t, len(dcr.Charges), 1)
 	st.Expect(t, dcr.Charges[0].Domain, "zero.work")
 	st.Expect(t, dcr.Charges[0].Category, "premium")
-	st.Expect(t, dcr.Charges[0].CategoryName, "Registration Fee")
+	st.Expect(t, len(dcr.Charges[0].Fees), 1)
+	st.Expect(t, dcr.Charges[0].Fees[0].Amount, "500.000")
+	st.Expect(t, dcr.Charges[0].Fees[0].Description, "Registration Fee")
 }

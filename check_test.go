@@ -646,8 +646,9 @@ func TestScanCheckDomainResponseWithFee10(t *testing.T) {
 	st.Expect(t, dcr.Checks[0].Available, true)
 	st.Expect(t, dcr.Checks[0].Reason, "")
 	st.Expect(t, len(dcr.Charges), 1)
-	st.Expect(t, dcr.Charges[0].CreatePrice, "300.00")
-	st.Expect(t, dcr.Charges[0].CategoryName, "domain creation in phase 'open'")
+	st.Expect(t, len(dcr.Charges[0].Fees), 1)
+	st.Expect(t, dcr.Charges[0].Fees[0].Amount, "300.00")
+	st.Expect(t, dcr.Charges[0].Fees[0].Description, "domain creation in phase 'open'")
 }
 
 func TestEncodeDomainCheckFee10(t *testing.T) {

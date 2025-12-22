@@ -88,6 +88,8 @@ func main() {
 	conn := connect(cfg)
 
 	defer func() {
+		logger := epp.DebugLogger
+		epp.DebugLogger = nil
 		if r := recover(); r != nil {
 			// If it was our fatal error, we already logged it.
 			// Just ensure we prompt and then exit 1.
@@ -95,10 +97,12 @@ func main() {
 			// but for this CLI it's probably fine to treat all panics as "something went wrong".
 			// But we DO want to run promptRawXML.
 			conn.Close()
+			epp.DebugLogger = logger
 			promptRawXML(&logBuf)
 			os.Exit(1)
 		}
 		conn.Close()
+		epp.DebugLogger = logger
 		promptRawXML(&logBuf)
 	}()
 
@@ -246,11 +250,17 @@ func connect(cfg *Config) *epp.Conn {
 	}
 
 	color.Fprintf(os.Stderr, "Performing EPP handshake\n")
+	logger := epp.DebugLogger
+	epp.DebugLogger = nil
 	c, err := epp.NewConn(conn)
+	epp.DebugLogger = logger
 	fatalif(err)
 
 	color.Fprintf(os.Stderr, "Logging in as %s...\n", cfg.User)
+	logger = epp.DebugLogger
+	epp.DebugLogger = nil
 	err = c.Login(cfg.User, cfg.Password, "")
+	epp.DebugLogger = logger
 	fatalif(err)
 
 	return c
@@ -656,20 +666,74 @@ func printDCR(dcr *epp.DomainCheckResponse) {
 	if dcr == nil {
 		return
 	}
-	av := make(map[string]bool)
+
+	// Map domain availability for quick lookup when printing fees
+	avData := make(map[string]struct {
+		Available bool
+		Reason    string
+	})
 	for _, c := range dcr.Checks {
-		av[c.Domain] = c.Available
+		avData[c.Domain] = struct {
+			Available bool
+			Reason    string
+		}{c.Available, c.Reason}
+
 		if c.Available {
-			color.Printf("@{g}%s\tavail=%t\treason=%q\n", c.Domain, c.Available, c.Reason)
+			color.Printf("%-30s @{g}available", c.Domain)
 		} else {
-			color.Printf("@{y}%s\tavail=%t\treason=%q\n", c.Domain, c.Available, c.Reason)
+			color.Printf("%-30s @{y}unavailable", c.Domain)
 		}
+
+		if c.Reason != "" {
+			color.Printf(" @{.}reason=%q", c.Reason)
+		}
+		color.Println()
 	}
-	for _, c := range dcr.Charges {
-		if av[c.Domain] {
-			color.Printf("@{g}%s\tcategory=%s\tname=%q\tcreate=%s\trenew=%s\trestore=%s\ttransfer=%s\tcurrency=%s\n", c.Domain, c.Category, c.CategoryName, c.CreatePrice, c.RenewPrice, c.RestorePrice, c.TransferPrice, c.Currency)
-		} else {
-			color.Printf("@{y}%s\tcategory=%s\tname=%q\tcreate=%s\trenew=%s\trestore=%s\ttransfer=%s\tcurrency=%s\n", c.Domain, c.Category, c.CategoryName, c.CreatePrice, c.RenewPrice, c.RestorePrice, c.TransferPrice, c.Currency)
+
+	// Print Fee details if present
+	if len(dcr.Charges) > 0 {
+		color.Println("\n@{.}Fees & Pricing:")
+		for _, c := range dcr.Charges {
+			if len(c.Fees) == 0 && c.Category == "" {
+				continue
+			}
+
+			if avData[c.Domain].Available {
+				color.Printf("  @{g}%s", c.Domain)
+			} else {
+				color.Printf("  @{y}%s", c.Domain)
+			}
+
+			if c.Category != "" {
+				color.Printf(" @{.}category=%s", c.Category)
+			}
+			if c.Currency != "" {
+				color.Printf(" @{.}currency=%s", c.Currency)
+			}
+			color.Println()
+
+			for _, f := range c.Fees {
+				color.Printf("    %-10s @{w}%8s", f.Name, f.Amount)
+
+				attrs := []string{}
+				if f.Standard {
+					attrs = append(attrs, "standard")
+				}
+				if f.Refundable {
+					attrs = append(attrs, "refundable")
+				}
+				if f.GracePeriod != "" {
+					attrs = append(attrs, fmt.Sprintf("grace=%s", f.GracePeriod))
+				}
+				if f.Description != "" {
+					attrs = append(attrs, fmt.Sprintf("desc=%q", f.Description))
+				}
+
+				if len(attrs) > 0 {
+					color.Printf("  @{.}%s", strings.Join(attrs, " "))
+				}
+				color.Println()
+			}
 		}
 	}
 }
