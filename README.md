@@ -20,14 +20,40 @@ brew install epp
 
 ### Usage
 
+The basic syntax is `epp [options] <command> [arguments]`.
+
+#### Domain Operations
+
 ```bash
-# Check domain availability
+# Check domain availability and pricing
 epp check example.com
 
-# Get domain info
-epp info example.com
+# Get detailed domain info
+epp info domain example.com
 
-# Send raw XML
+# Create a new domain
+epp create domain example.com -period 1 -auth secret123 -registrant contact-id
+
+# Renew a domain (automatically fetches current expiry if -exp is omitted)
+epp renew domain example.com -period 1
+
+# Delete a domain
+epp delete domain example.com
+
+# Restore a domain (RGP)
+epp restore domain example.com
+
+# Transfer operations (query, request, approve, reject, cancel)
+epp transfer domain example.com -op request -auth secret123
+```
+
+#### Contact & Other Operations
+
+```bash
+# Create a new contact
+epp create contact -id CID-1 -email user@example.com -name "John Doe" -city "New York" -cc US -auth secret123
+
+# Send raw XML from a file
 epp raw request.xml
 ```
 
