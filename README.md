@@ -43,6 +43,12 @@ epp delete domain example.com
 # Restore a domain (RGP)
 epp restore domain example.com
 
+# Check EPP poll messages
+epp poll
+
+# Acknowledge a poll message
+epp poll -ack 12345
+
 # Transfer operations (query, request, approve, reject, cancel)
 epp transfer domain example.com -op request -auth secret123
 ```

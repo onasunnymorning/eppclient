@@ -36,7 +36,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  check   Check domain availability\n")
 		fmt.Fprintf(os.Stderr, "  create  Create a domain\n")
 		fmt.Fprintf(os.Stderr, "  renew   Renew a domain\n")
-		fmt.Fprintf(os.Stderr, "  restore Restore a domain (RGP)\n")
+		fmt.Fprintf(os.Stderr, "  poll    Check EPP poll messages\n")
 		fmt.Fprintf(os.Stderr, "  transfer Transfer a domain\n")
 		fmt.Fprintf(os.Stderr, "  raw     Send raw XML from a file or stdin\n")
 		fmt.Fprintf(os.Stderr, "  info    Get domain info\n")
@@ -119,6 +119,8 @@ func main() {
 		runRenew(conn, subArgs)
 	case "restore":
 		runRestore(conn, subArgs)
+	case "poll":
+		runPoll(conn, subArgs)
 	case "transfer":
 		runTransfer(conn, subArgs)
 	case "raw":
@@ -187,6 +189,9 @@ func checkUsage(cmd string, args []string) {
 			fmt.Fprintf(os.Stderr, "Unknown restore type: %s. Use 'domain'.\n", sub)
 			os.Exit(1)
 		}
+	case "poll":
+		// Usage: epp poll [-ack id]
+		// No strict enforcement needed for req
 	case "transfer":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "Usage: epp transfer <domain> [options]")
@@ -579,6 +584,35 @@ func runTransfer(c *epp.Conn, args []string) {
 		fmt.Fprintf(os.Stderr, "Unknown transfer type: %s. Use 'domain'.\n", cmd)
 		os.Exit(1)
 	}
+}
+
+func runPoll(c *epp.Conn, args []string) {
+	fs := flag.NewFlagSet("poll", flag.ExitOnError)
+	ack := fs.String("ack", "", "acknowledge message ID")
+	fs.Parse(args)
+
+	if *ack != "" {
+		res, err := c.PollAck(*ack)
+		fatalif(err)
+		color.Printf("@{g}Message %s acknowledged.\n", *ack)
+		if res.Count > 0 {
+			color.Printf("@{.}Messages remaining: %d\n", res.Count)
+		}
+		return
+	}
+
+	res, err := c.PollReq()
+	fatalif(err)
+
+	if res.ID == "" {
+		color.Println("@{y}No messages in queue.")
+		return
+	}
+
+	color.Printf("@{g}Message ID: %s\n", res.ID)
+	color.Printf("Count: %d\n", res.Count)
+	color.Printf("Date: %s\n", res.Date.Format(time.RFC3339))
+	color.Printf("Message: %s\n", res.Message)
 }
 
 func runTransferDomain(c *epp.Conn, args []string) {

@@ -16,6 +16,7 @@ type Response struct {
 	DomainUpdateResponse
 	ContactCreateResponse
 	ContactInfoResponse
+	PollResponse
 }
 
 var scanResponse = xx.NewScanner()
