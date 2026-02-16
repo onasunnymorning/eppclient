@@ -118,7 +118,7 @@ func main() {
 	c, err := epp.NewConn(conn)
 	fatalif(err)
 	color.Fprintf(os.Stderr, "Logging in as %s...\n", user)
-	err = c.Login(user, pass, "")
+	_, err = c.Login(user, pass, "")
 	fatalif(err)
 
 	// Check
