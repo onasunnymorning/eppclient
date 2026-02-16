@@ -7,22 +7,16 @@ import (
 
 // Login initializes an authenticated EPP session.
 // https://tools.ietf.org/html/rfc5730#section-2.9.1.1
-func (c *Conn) Login(user, password, newPassword string) error {
+func (c *Conn) Login(user, password, newPassword string) (Result, error) {
 	err := c.writeLogin(user, password, newPassword)
 	if err != nil {
-		return err
+		return Result{}, err
 	}
 	res, err := c.readResponse()
 	if err != nil {
-		return err
+		return Result{}, err
 	}
-	// We always have a .Result in our non-pointer, but it might be meaningless.
-	// We might not have read anything.  We think that the worst case is we
-	// have the same zero values we'd get without the assignment-even-in-error-case.
-	c.m.Lock()
-	c.LoginResult = res.Result
-	c.m.Unlock()
-	return err
+	return res.Result, nil
 }
 
 func (c *Conn) writeLogin(user, password, newPassword string) error {
