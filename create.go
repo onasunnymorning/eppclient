@@ -104,6 +104,53 @@ type DomainCreateResponse struct {
 	ExDate time.Time // <domain:exDate>
 }
 
+// CreateHost requests the creation of a host.
+// https://tools.ietf.org/html/rfc5732#section-3.2.1
+func (c *Conn) CreateHost(host string, ips []string, v6 []string) (*HostCreateResponse, error) {
+	x, err := encodeHostCreate(&c.Greeting, host, ips, v6)
+	if err != nil {
+		return nil, err
+	}
+	err = c.writeRequest(x)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.readResponse()
+	if err != nil {
+		return nil, err
+	}
+	return &res.HostCreateResponse, nil
+}
+
+func encodeHostCreate(greeting *Greeting, host string, ips []string, v6 []string) ([]byte, error) {
+	buf := bytes.NewBufferString(xmlCommandPrefix)
+	buf.WriteString(`<create><host:create xmlns:host="urn:ietf:params:xml:ns:host-1.0">`)
+	buf.WriteString(`<host:name>`)
+	xml.EscapeText(buf, []byte(host))
+	buf.WriteString(`</host:name>`)
+
+	for _, ip := range ips {
+		buf.WriteString(`<host:addr ip="v4">`)
+		xml.EscapeText(buf, []byte(ip))
+		buf.WriteString(`</host:addr>`)
+	}
+	for _, ip := range v6 {
+		buf.WriteString(`<host:addr ip="v6">`)
+		xml.EscapeText(buf, []byte(ip))
+		buf.WriteString(`</host:addr>`)
+	}
+
+	buf.WriteString(`</host:create></create>`)
+	buf.WriteString(xmlCommandSuffix)
+	return buf.Bytes(), nil
+}
+
+// HostCreateResponse represents an EPP response for a host create request.
+type HostCreateResponse struct {
+	Host   string    // <host:name>
+	CrDate time.Time // <host:crDate>
+}
+
 func init() {
 	path := "epp > response > resData > " + ObjDomain + " creData"
 	scanResponse.MustHandleCharData(path+">name", func(c *xx.Context) error {
@@ -121,6 +168,19 @@ func init() {
 		dcr := &c.Value.(*Response).DomainCreateResponse
 		var err error
 		dcr.ExDate, err = time.Parse(time.RFC3339, string(c.CharData))
+		return err
+	})
+
+	pathHost := "epp > response > resData > " + ObjHost + " creData"
+	scanResponse.MustHandleCharData(pathHost+">name", func(c *xx.Context) error {
+		hcr := &c.Value.(*Response).HostCreateResponse
+		hcr.Host = string(c.CharData)
+		return nil
+	})
+	scanResponse.MustHandleCharData(pathHost+">crDate", func(c *xx.Context) error {
+		hcr := &c.Value.(*Response).HostCreateResponse
+		var err error
+		hcr.CrDate, err = time.Parse(time.RFC3339, string(c.CharData))
 		return err
 	})
 }

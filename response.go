@@ -11,6 +11,7 @@ type Response struct {
 	DomainInfoResponse
 	// Additions for new commands
 	DomainCreateResponse
+	HostCreateResponse
 	DomainRenewResponse
 	DomainTransferResponse
 	DomainUpdateResponse

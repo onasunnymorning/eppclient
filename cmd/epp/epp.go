@@ -40,6 +40,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  transfer Transfer a domain\n")
 		fmt.Fprintf(os.Stderr, "  raw     Send raw XML from a file or stdin\n")
 		fmt.Fprintf(os.Stderr, "  info    Get domain info\n")
+		fmt.Fprintf(os.Stderr, "  update  Update domain, contact or host\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
 	}
@@ -125,6 +126,8 @@ func main() {
 		runTransfer(conn, subArgs)
 	case "raw":
 		runRaw(conn, subArgs)
+	case "update":
+		runUpdate(conn, subArgs)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		flag.Usage()
@@ -151,22 +154,22 @@ func checkUsage(cmd string, args []string) {
 		}
 	case "delete":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp delete <domain|contact> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp delete <domain|contact|host> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
-		if sub != "domain" && sub != "contact" {
-			fmt.Fprintf(os.Stderr, "Unknown delete type: %s. Use 'domain' or 'contact'.\n", sub)
+		if sub != "domain" && sub != "contact" && sub != "host" {
+			fmt.Fprintf(os.Stderr, "Unknown delete type: %s. Use 'domain', 'contact' or 'host'.\n", sub)
 			os.Exit(1)
 		}
 	case "create":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp create <domain|contact> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp create <domain|contact|host> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
-		if sub != "domain" && sub != "contact" {
-			fmt.Fprintf(os.Stderr, "Unknown create type: %s. Use 'domain' or 'contact'.\n", sub)
+		if sub != "domain" && sub != "contact" && sub != "host" {
+			fmt.Fprintf(os.Stderr, "Unknown create type: %s. Use 'domain', 'contact' or 'host'.\n", sub)
 			os.Exit(1)
 		}
 	case "renew":
@@ -205,6 +208,16 @@ func checkUsage(cmd string, args []string) {
 	case "raw":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "Usage: epp raw <file>")
+			os.Exit(1)
+		}
+	case "update":
+		if len(args) == 0 {
+			fmt.Fprintln(os.Stderr, "Usage: epp update <domain|contact|host> [options]")
+			os.Exit(1)
+		}
+		sub := args[0]
+		if sub != "domain" && sub != "contact" && sub != "host" {
+			fmt.Fprintf(os.Stderr, "Unknown update type: %s. Use 'domain', 'contact' or 'host'.\n", sub)
 			os.Exit(1)
 		}
 	}
@@ -344,8 +357,10 @@ func runDelete(c *epp.Conn, args []string) {
 		runDeleteDomain(c, subArgs)
 	case "contact":
 		runDeleteContact(c, subArgs)
+	case "host":
+		runDeleteHost(c, subArgs)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown delete type: %s. Use 'domain' or 'contact'.\n", cmd)
+		fmt.Fprintf(os.Stderr, "Unknown delete type: %s. Use 'domain', 'contact' or 'host'.\n", cmd)
 		os.Exit(1)
 	}
 }
@@ -370,6 +385,16 @@ func runDeleteContact(c *epp.Conn, args []string) {
 	color.Printf("@{g}Contact %s deleted!\n", args[0])
 }
 
+func runDeleteHost(c *epp.Conn, args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: epp delete host <host>")
+		os.Exit(1)
+	}
+	err := c.DeleteHost(args[0])
+	fatalif(err)
+	color.Printf("@{g}Host %s deleted!\n", args[0])
+}
+
 func runCreate(c *epp.Conn, args []string) {
 	cmd := args[0]
 	subArgs := args[1:]
@@ -379,6 +404,8 @@ func runCreate(c *epp.Conn, args []string) {
 		runCreateDomain(c, subArgs)
 	case "contact":
 		runCreateContact(c, subArgs)
+	case "host":
+		runCreateHost(c, subArgs)
 	default:
 		// Fallback for backward compatibility or simple "epp create domain.com"?
 		// The user explicitly asked for "move to epp create domain", so enforcing subcommand is correct.
@@ -482,6 +509,38 @@ func runCreateContact(c *epp.Conn, args []string) {
 	res, err := c.CreateContact(*id, *email, pi, *voice, *auth, nil)
 	fatalif(err)
 	color.Printf("@{g}Contact %s created!\nCreated: %s\n", res.ID, res.CrDate)
+}
+
+func runCreateHost(c *epp.Conn, args []string) {
+	fs := flag.NewFlagSet("create host", flag.ExitOnError)
+	ips := fs.String("ips", "", "comma separated IPv4 addresses")
+	v6 := fs.String("v6", "", "comma separated IPv6 addresses")
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: epp create host [-ips v4,v4] [-v6 v6,v6] <host>")
+		os.Exit(1)
+	}
+
+	host := fs.Arg(0)
+	var ipList, v6List []string
+
+	if *ips != "" {
+		ipList = strings.Split(*ips, ",")
+		for i, v := range ipList {
+			ipList[i] = strings.TrimSpace(v)
+		}
+	}
+	if *v6 != "" {
+		v6List = strings.Split(*v6, ",")
+		for i, v := range v6List {
+			v6List[i] = strings.TrimSpace(v)
+		}
+	}
+
+	res, err := c.CreateHost(host, ipList, v6List)
+	fatalif(err)
+	color.Printf("@{g}Host %s created!\nCreated: %s\n", res.Host, res.CrDate)
 }
 
 func runRenew(c *epp.Conn, args []string) {
@@ -679,6 +738,266 @@ func runRaw(c *epp.Conn, args []string) {
 	fatalif(err)
 
 	fmt.Printf("%s\n", string(res))
+}
+
+func runUpdate(c *epp.Conn, args []string) {
+	cmd := args[0]
+	subArgs := args[1:]
+
+	switch cmd {
+	case "domain":
+		runUpdateDomain(c, subArgs)
+	case "contact":
+		runUpdateContact(c, subArgs)
+	case "host":
+		runUpdateHost(c, subArgs)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown update type: %s. Use 'domain', 'contact' or 'host'.\n", cmd)
+		os.Exit(1)
+	}
+}
+
+func runUpdateDomain(c *epp.Conn, args []string) {
+	fs := flag.NewFlagSet("update domain", flag.ExitOnError)
+	addNS := fs.String("add-ns", "", "comma separated nameservers to add")
+	remNS := fs.String("rem-ns", "", "comma separated nameservers to remove")
+	addStatus := fs.String("add-status", "", "comma separated status codes to add (key=value or just key)")
+	remStatus := fs.String("rem-status", "", "comma separated status codes to remove")
+	registrant := fs.String("chg-registrant", "", "new registrant ID")
+	auth := fs.String("chg-auth", "", "new auth info")
+
+	// Contacts
+	addAdmin := fs.String("add-admin", "", "admin contact to add")
+	addTech := fs.String("add-tech", "", "tech contact to add")
+	addBilling := fs.String("add-billing", "", "billing contact to add")
+	remAdmin := fs.String("rem-admin", "", "admin contact to remove")
+	remTech := fs.String("rem-tech", "", "tech contact to remove")
+	remBilling := fs.String("rem-billing", "", "billing contact to remove")
+
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: epp update domain [options] <domain>")
+		fs.PrintDefaults()
+		os.Exit(1)
+	}
+
+	domain := fs.Arg(0)
+
+	add := make(map[string]interface{})
+	rem := make(map[string]interface{})
+	chg := make(map[string]string)
+
+	// NS
+	if *addNS != "" {
+		add["ns"] = parseList(*addNS)
+	}
+	if *remNS != "" {
+		rem["ns"] = parseList(*remNS)
+	}
+
+	// Status
+	if *addStatus != "" {
+		add["status"] = parseMap(*addStatus)
+	}
+	if *remStatus != "" {
+		rem["status"] = parseMap(*remStatus)
+	}
+
+	// Contacts
+	addContacts := make(map[string]string)
+	if *addAdmin != "" {
+		addContacts["admin"] = *addAdmin
+	}
+	if *addTech != "" {
+		addContacts["tech"] = *addTech
+	}
+	if *addBilling != "" {
+		addContacts["billing"] = *addBilling
+	}
+	if len(addContacts) > 0 {
+		add["contacts"] = addContacts
+	}
+
+	remContacts := make(map[string]string)
+	if *remAdmin != "" {
+		remContacts["admin"] = *remAdmin
+	}
+	if *remTech != "" {
+		remContacts["tech"] = *remTech
+	}
+	if *remBilling != "" {
+		remContacts["billing"] = *remBilling
+	}
+	if len(remContacts) > 0 {
+		rem["contacts"] = remContacts
+	}
+
+	// Chg
+	if *registrant != "" {
+		chg["registrant"] = *registrant
+	}
+	if *auth != "" {
+		chg["auth"] = *auth
+	}
+
+	err := c.UpdateDomain(domain, add, rem, chg)
+	fatalif(err)
+	color.Printf("@{g}Domain %s updated!\n", domain)
+}
+
+func runUpdateContact(c *epp.Conn, args []string) {
+	fs := flag.NewFlagSet("update contact", flag.ExitOnError)
+	addStatus := fs.String("add-status", "", "comma separated status codes to add")
+	remStatus := fs.String("rem-status", "", "comma separated status codes to remove")
+
+	name := fs.String("chg-name", "", "new name")
+	org := fs.String("chg-org", "", "new organization")
+	street := fs.String("chg-street", "", "new street")
+	city := fs.String("chg-city", "", "new city")
+	sp := fs.String("chg-sp", "", "new state/province")
+	pc := fs.String("chg-pc", "", "new postal code")
+	cc := fs.String("chg-cc", "", "new country code")
+
+	email := fs.String("chg-email", "", "new email")
+	voice := fs.String("chg-voice", "", "new voice")
+	fax := fs.String("chg-fax", "", "new fax")
+	auth := fs.String("chg-auth", "", "new auth info")
+
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: epp update contact [options] <contact-id>")
+		fs.PrintDefaults()
+		os.Exit(1)
+	}
+
+	id := fs.Arg(0)
+
+	add := make(map[string]interface{})
+	rem := make(map[string]interface{})
+	chg := make(map[string]interface{})
+
+	if *addStatus != "" {
+		add["status"] = parseMap(*addStatus)
+	}
+	if *remStatus != "" {
+		rem["status"] = parseMap(*remStatus)
+	}
+
+	// Postal change
+	if *name != "" || *org != "" || *street != "" || *city != "" || *sp != "" || *pc != "" || *cc != "" {
+		// This is tricky because we don't know if we need to set existing values or if partial update is allowed by EPP lib helper
+		// Our helper takes PostalInfo.
+		// EPP requires full postal info replacement usually if changing any checking.
+		// But let's assume user provides what they want to change, and we might strictly need all if RFC says so.
+		// RFC 5733 says: <contact:chg> contains <contact:postalInfo>.
+		// Ideally we should fetch existing info first, but that's expensive.
+		// For now let's construct what we have. API consumer should know better.
+		pi := epp.PostalInfo{
+			Name:   *name,
+			Org:    *org,
+			Street: *street,
+			City:   *city,
+			SP:     *sp,
+			PC:     *pc,
+			CC:     *cc,
+		}
+		chg["postal"] = pi
+	}
+
+	if *email != "" {
+		chg["email"] = *email
+	}
+	if *voice != "" {
+		chg["voice"] = *voice
+	}
+	if *fax != "" {
+		chg["fax"] = *fax
+	}
+	if *auth != "" {
+		chg["auth"] = *auth
+	}
+
+	err := c.UpdateContact(id, add, rem, chg)
+	fatalif(err)
+	color.Printf("@{g}Contact %s updated!\n", id)
+}
+
+func runUpdateHost(c *epp.Conn, args []string) {
+	fs := flag.NewFlagSet("update host", flag.ExitOnError)
+	addIPs := fs.String("add-ips", "", "comma separated IPv4 to add")
+	addV6 := fs.String("add-v6", "", "comma separated IPv6 to add")
+	remIPs := fs.String("rem-ips", "", "comma separated IPv4 to remove")
+	remV6 := fs.String("rem-v6", "", "comma separated IPv6 to remove")
+	addStatus := fs.String("add-status", "", "comma separated status to add")
+	remStatus := fs.String("rem-status", "", "comma separated status to remove")
+	newName := fs.String("chg-name", "", "new host name")
+
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: epp update host [options] <host>")
+		fs.PrintDefaults()
+		os.Exit(1)
+	}
+
+	host := fs.Arg(0)
+
+	add := make(map[string]interface{})
+	rem := make(map[string]interface{})
+	chg := make(map[string]interface{})
+
+	if *addIPs != "" {
+		add["ips"] = parseList(*addIPs)
+	}
+	if *addV6 != "" {
+		add["v6"] = parseList(*addV6)
+	}
+	if *addStatus != "" {
+		add["status"] = parseMap(*addStatus)
+	}
+
+	if *remIPs != "" {
+		rem["ips"] = parseList(*remIPs)
+	}
+	if *remV6 != "" {
+		rem["v6"] = parseList(*remV6)
+	}
+	if *remStatus != "" {
+		rem["status"] = parseMap(*remStatus)
+	}
+
+	if *newName != "" {
+		chg["name"] = *newName
+	}
+
+	err := c.UpdateHost(host, add, rem, chg)
+	fatalif(err)
+	color.Printf("@{g}Host %s updated!\n", host)
+}
+
+func parseList(s string) []string {
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
+}
+
+func parseMap(s string) map[string]string {
+	m := make(map[string]string)
+	parts := strings.Split(s, ",")
+	for _, p := range parts {
+		kv := strings.SplitN(p, "=", 2)
+		k := strings.TrimSpace(kv[0])
+		if len(kv) == 2 {
+			m[k] = strings.TrimSpace(kv[1])
+		} else {
+			m[k] = "" // No value, e.g. status without message
+		}
+	}
+	return m
 }
 
 func logif(err error) bool {

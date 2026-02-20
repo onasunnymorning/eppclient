@@ -52,3 +52,27 @@ func encodeContactDelete(greeting *Greeting, id string, extData map[string]strin
 	buf.WriteString(xmlCommandSuffix)
 	return buf.Bytes(), nil
 }
+
+// DeleteHost requests the deletion of a host.
+// https://tools.ietf.org/html/rfc5732#section-3.2.2
+func (c *Conn) DeleteHost(host string) error {
+	x, err := encodeHostDelete(&c.Greeting, host)
+	if err != nil {
+		return err
+	}
+	err = c.writeRequest(x)
+	if err != nil {
+		return err
+	}
+	_, err = c.readResponse()
+	return err
+}
+
+func encodeHostDelete(greeting *Greeting, host string) ([]byte, error) {
+	buf := bytes.NewBufferString(xmlCommandPrefix)
+	buf.WriteString(`<delete><host:delete xmlns:host="urn:ietf:params:xml:ns:host-1.0"><host:name>`)
+	xml.EscapeText(buf, []byte(host))
+	buf.WriteString(`</host:name></host:delete></delete>`)
+	buf.WriteString(xmlCommandSuffix)
+	return buf.Bytes(), nil
+}
