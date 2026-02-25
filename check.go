@@ -139,15 +139,18 @@ func encodeDomainCheck(greeting *Greeting, domains []string, extData map[string]
 		buf.WriteString(`">`)
 		feePhase := ""
 		if supportsFeePhase {
-			feePhase = fmt.Sprintf(" phase=%q", extData["fee:phase"])
+			feePhase += fmt.Sprintf(" phase=%q", extData["fee:phase"])
+		}
+		if extData["fee:subphase"] != "" {
+			feePhase += fmt.Sprintf(" subphase=%q", extData["fee:subphase"])
 		}
 
 		// ExtFee10 uses global commands on this server (and typically in fee-1.0 when not using objects)
 		if feeURN == ExtFee10 {
-			buf.WriteString(`<fee:command name="create"/>`)
-			buf.WriteString(`<fee:command name="renew"/>`)
-			buf.WriteString(`<fee:command name="restore"/>`)
-			buf.WriteString(`<fee:command name="transfer"/>`)
+			buf.WriteString(fmt.Sprintf(`<fee:command name="create"%s/>`, feePhase))
+			buf.WriteString(fmt.Sprintf(`<fee:command name="renew"%s/>`, feePhase))
+			buf.WriteString(fmt.Sprintf(`<fee:command name="restore"%s/>`, feePhase))
+			buf.WriteString(fmt.Sprintf(`<fee:command name="transfer"%s/>`, feePhase))
 		} else {
 			// Other versions iterate per domain (or we preserve existing behavior for them)
 			for _, domain := range domains {
@@ -162,7 +165,7 @@ func encodeDomainCheck(greeting *Greeting, domains []string, extData map[string]
 				case ExtFee11: // https://tools.ietf.org/html/draft-brown-epp-fees-07#section-5.1.1
 					buf.WriteString(fmt.Sprintf(`<fee:command%s>create</fee:command>`, feePhase))
 				case ExtFee21: // Version 0.21 changes the XML structure
-					buf.WriteString(`<fee:command name="create"/>`)
+					buf.WriteString(fmt.Sprintf(`<fee:command name="create"%s/>`, feePhase))
 				default:
 					buf.WriteString(`<fee:domain>`)
 					buf.WriteString(`<fee:name>`)

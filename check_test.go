@@ -664,6 +664,23 @@ func TestEncodeDomainCheckFee10(t *testing.T) {
 	st.Expect(t, err, nil)
 }
 
+func TestEncodeDomainCheckFeePhaseSubphase(t *testing.T) {
+	var greeting Greeting
+	greeting.Extensions = []string{ExtFee10}
+	extData := map[string]string{
+		"fee:phase":    "sunrise",
+		"fee:subphase": "testsub",
+	}
+	x, err := encodeDomainCheck(&greeting, []string{"example.com"}, extData)
+	st.Expect(t, err, nil)
+	expected := `<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><check><domain:check xmlns:domain="urn:ietf:params:xml:ns:domain-1.0"><domain:name>example.com</domain:name></domain:check></check><extension><fee:check xmlns:fee="urn:ietf:params:xml:ns:epp:fee-1.0"><fee:command name="create" phase="sunrise" subphase="testsub"/><fee:command name="renew" phase="sunrise" subphase="testsub"/><fee:command name="restore" phase="sunrise" subphase="testsub"/><fee:command name="transfer" phase="sunrise" subphase="testsub"/></fee:check></extension></command></epp>`
+	st.Expect(t, string(x), expected)
+	var v struct{}
+	err = xml.Unmarshal(x, &v)
+	st.Expect(t, err, nil)
+}
+
 func TestScanCheckDomainResponseWithPremiumAttribute(t *testing.T) {
 	x := `<?xml version="1.0" encoding="UTF-8"?>
 <epp xmlns="urn:ietf:params:xml:ns:epp-1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:ietf:params:xml:ns:epp-1.0 epp-1.0.xsd">

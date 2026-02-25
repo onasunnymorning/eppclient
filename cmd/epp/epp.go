@@ -431,6 +431,7 @@ func runCreateDomain(c *epp.Conn, args []string) {
 	nsParams := fs.String("ns", "", "comma separated nameservers")
 	fee := fs.String("fee", "", "fee amount (requires -currency usually)")
 	currency := fs.String("currency", "", "fee currency")
+	phase := fs.String("phase", "", "launch phase (e.g., sunrise, open)")
 
 	fs.Parse(args)
 
@@ -461,11 +462,16 @@ func runCreateDomain(c *epp.Conn, args []string) {
 	}
 
 	var extData map[string]string
-	if *fee != "" {
+	if *fee != "" || *phase != "" {
 		extData = make(map[string]string)
-		extData["fee:fee"] = *fee
-		if *currency != "" {
-			extData["fee:currency"] = *currency
+		if *fee != "" {
+			extData["fee:fee"] = *fee
+			if *currency != "" {
+				extData["fee:currency"] = *currency
+			}
+		}
+		if *phase != "" {
+			extData["launch:phase"] = *phase
 		}
 	}
 
