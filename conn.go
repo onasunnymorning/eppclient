@@ -30,7 +30,7 @@ type Conn struct {
 	// a connection is already opened will have no effect.
 	Timeout time.Duration
 
-	// m protects Greeting and LoginResult.
+	// m protects Greeting.
 	m sync.Mutex
 
 	// Greeting holds the last received greeting message from the server,
@@ -38,13 +38,6 @@ type Conn struct {
 	//
 	// Deprecated: This field is written to upon opening a new EPP connection and should not be modified.
 	Greeting
-
-	// LoginResult holds the last received login response message's Result
-	// from the server, in which some servers might include diagnostics such
-	// as connection count limits.
-	//
-	// Deprecated: this field is written to by the Login method but otherwise is not used by this package.
-	LoginResult Result
 
 	// mRead synchronizes connection reads.
 	mRead sync.Mutex

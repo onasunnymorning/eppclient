@@ -37,7 +37,7 @@ func TestGreetingSupportsObject(t *testing.T) {
 	g := Greeting{}
 	st.Expect(t, g.SupportsObject(ObjDomain), false)
 	st.Expect(t, g.SupportsObject(ObjHost), false)
-	g.Objects = testObjects
+	g.Objects = []string{ObjDomain, ObjHost}
 	st.Expect(t, g.SupportsObject(ObjDomain), true)
 	st.Expect(t, g.SupportsObject(ObjHost), true)
 }
@@ -46,7 +46,7 @@ func TestGreetingSupportsExtension(t *testing.T) {
 	g := Greeting{}
 	st.Expect(t, g.SupportsExtension(ExtCharge), false)
 	st.Expect(t, g.SupportsExtension(ExtIDN), false)
-	g.Extensions = testExtensions
+	g.Extensions = []string{ExtCharge, ExtIDN}
 	st.Expect(t, g.SupportsExtension(ExtCharge), true)
 	st.Expect(t, g.SupportsExtension(ExtIDN), true)
 }

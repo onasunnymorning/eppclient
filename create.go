@@ -76,20 +76,38 @@ func encodeDomainCreate(greeting *Greeting, domain string, period int, unit stri
 	buf.WriteString(`</domain:create></create>`)
 
 	// Extensions
-	if fee, ok := extData["fee:fee"]; ok {
+	fee, hasFee := extData["fee:fee"]
+	phase, hasLaunch := extData["launch:phase"]
+	hasExtension := hasFee || hasLaunch
+
+	if hasExtension {
 		buf.WriteString(`<extension>`)
-		buf.WriteString(`<fee:create xmlns:fee="`)
-		buf.WriteString(ExtFee10)
-		buf.WriteString(`">`)
-		if currency, ok := extData["fee:currency"]; ok {
-			buf.WriteString(`<fee:currency>`)
-			buf.WriteString(currency)
-			buf.WriteString(`</fee:currency>`)
+
+		if hasFee {
+			buf.WriteString(`<fee:create xmlns:fee="`)
+			buf.WriteString(ExtFee10)
+			buf.WriteString(`">`)
+			if currency, ok := extData["fee:currency"]; ok {
+				buf.WriteString(`<fee:currency>`)
+				buf.WriteString(currency)
+				buf.WriteString(`</fee:currency>`)
+			}
+			buf.WriteString(`<fee:fee>`)
+			buf.WriteString(fee)
+			buf.WriteString(`</fee:fee>`)
+			buf.WriteString(`</fee:create>`)
 		}
-		buf.WriteString(`<fee:fee>`)
-		buf.WriteString(fee)
-		buf.WriteString(`</fee:fee>`)
-		buf.WriteString(`</fee:create>`)
+
+		if hasLaunch {
+			buf.WriteString(`<launch:create xmlns:launch="`)
+			buf.WriteString(ExtLaunch)
+			buf.WriteString(`">`)
+			buf.WriteString(`<launch:phase>`)
+			xml.EscapeText(buf, []byte(phase))
+			buf.WriteString(`</launch:phase>`)
+			buf.WriteString(`</launch:create>`)
+		}
+
 		buf.WriteString(`</extension>`)
 	}
 

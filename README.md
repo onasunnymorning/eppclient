@@ -3,7 +3,7 @@
 [![build status](https://github.com/onasunnymorning/eppclient/actions/workflows/goreleaser.yaml/badge.svg)](https://github.com/onasunnymorning/eppclient/actions)
 [![pkg.go.dev](https://img.shields.io/badge/docs-pkg.go.dev-blue.svg)](https://pkg.go.dev/github.com/onasunnymorning/eppclient)
 
-EPP ([Extensible Provisioning Protocol](https://tools.ietf.org/html/rfc5730)) client for [Go](https://golang.org/). 
+EPP ([Extensible Provisioning Protocol](https://tools.ietf.org/html/rfc5730)) client for [Go](https://golang.org/).
 
 ## EPP CLI
 
@@ -25,14 +25,16 @@ The basic syntax is `epp [options] <command> [arguments]`.
 #### Domain Operations
 
 ```bash
-# Check domain availability and pricing
+# Check domain availability and pricing (with optional launch phase and fee)
 epp check example.com
+epp check -phase sunrise -fee 10.00 -currency USD example.com
 
 # Get detailed domain info
 epp info domain example.com
 
-# Create a new domain
+# Create a new domain (with optional launch phase and fee)
 epp create domain example.com -period 1 -auth secret123 -registrant contact-id
+epp create domain example.com -period 1 -auth secret123 -registrant contact-id -phase sunrise -fee 10.00 -currency USD
 
 # Renew a domain (automatically fetches current expiry if -exp is omitted)
 epp renew domain example.com -period 1
@@ -53,11 +55,20 @@ epp poll -ack 12345
 epp transfer domain example.com -op request -auth secret123
 ```
 
-#### Contact & Other Operations
+#### Contact, Host & Other Operations
 
 ```bash
+# Print version information
+epp version
+
 # Create a new contact
 epp create contact -id CID-1 -email user@example.com -name "John Doe" -city "New York" -cc US -auth secret123
+
+# Create a new host
+epp create host -ips 192.0.2.1,192.0.2.2 -v6 2001:db8::1 ns1.example.com
+
+# Update a domain (add/remove nameservers, statuses)
+epp update domain -add-ns ns1.example.net,ns2.example.net -rem-ns ns1.example.com example.com
 
 # Send raw XML from a file
 epp raw request.xml

@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 var (
 	profileName string
 	verbose     bool
+	version     = "dev"
+	commit      = "none"
 )
 
 func main() {
@@ -41,6 +44,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  raw     Send raw XML from a file or stdin\n")
 		fmt.Fprintf(os.Stderr, "  info    Get domain info\n")
 		fmt.Fprintf(os.Stderr, "  update  Update domain, contact or host\n")
+		fmt.Fprintf(os.Stderr, "  version Print version information\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
 	}
@@ -79,6 +83,11 @@ func main() {
 
 	// Check usage before connecting
 	checkUsage(cmd, subArgs)
+
+	if cmd == "version" {
+		runVersion()
+		os.Exit(0)
+	}
 
 	cfg, err := loadConfig(profileName)
 	if err != nil {
@@ -220,7 +229,13 @@ func checkUsage(cmd string, args []string) {
 			fmt.Fprintf(os.Stderr, "Unknown update type: %s. Use 'domain', 'contact' or 'host'.\n", sub)
 			os.Exit(1)
 		}
+	case "version":
+		// No args needed
 	}
+}
+
+func runVersion() {
+	fmt.Printf("version.BuildInfo{Version:%q, GitCommit:%q, GoVersion:%q}\n", version, commit, runtime.Version())
 }
 
 func connect(cfg *Config) *epp.Conn {
@@ -277,7 +292,7 @@ func connect(cfg *Config) *epp.Conn {
 	color.Fprintf(os.Stderr, "Logging in as %s...\n", cfg.User)
 	logger = epp.DebugLogger
 	epp.DebugLogger = nil
-	err = c.Login(cfg.User, cfg.Password, "")
+	_, err = c.Login(cfg.User, cfg.Password, "")
 	epp.DebugLogger = logger
 	fatalif(err)
 
@@ -431,6 +446,7 @@ func runCreateDomain(c *epp.Conn, args []string) {
 	nsParams := fs.String("ns", "", "comma separated nameservers")
 	fee := fs.String("fee", "", "fee amount (requires -currency usually)")
 	currency := fs.String("currency", "", "fee currency")
+	phase := fs.String("phase", "", "launch phase (e.g., sunrise, open)")
 
 	fs.Parse(args)
 
@@ -461,11 +477,16 @@ func runCreateDomain(c *epp.Conn, args []string) {
 	}
 
 	var extData map[string]string
-	if *fee != "" {
+	if *fee != "" || *phase != "" {
 		extData = make(map[string]string)
-		extData["fee:fee"] = *fee
-		if *currency != "" {
-			extData["fee:currency"] = *currency
+		if *fee != "" {
+			extData["fee:fee"] = *fee
+			if *currency != "" {
+				extData["fee:currency"] = *currency
+			}
+		}
+		if *phase != "" {
+			extData["launch:phase"] = *phase
 		}
 	}
 

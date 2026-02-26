@@ -8,45 +8,27 @@ import (
 )
 
 func TestEncodeLogin(t *testing.T) {
-	x, err := encodeLogin("jane", "battery", "", "1.0", "en", nil, nil)
+	x, err := encodeLogin("user123", "pass123", "newpass", "1.0", "en", []string{ObjDomain, ObjContact}, []string{ExtFee10})
 	st.Expect(t, err, nil)
-	st.Expect(t, string(x), `<?xml version="1.0" encoding="UTF-8"?>
-<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><login><clID>jane</clID><pw>battery</pw><options><version>1.0</version><lang>en</lang></options><svcs></svcs></login></command></epp>`)
+
+	expected := `<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><login><clID>user123</clID><pw>pass123</pw><newPW>newpass</newPW><options><version>1.0</version><lang>en</lang></options><svcs><objURI>urn:ietf:params:xml:ns:domain-1.0</objURI><objURI>urn:ietf:params:xml:ns:contact-1.0</objURI><svcExtension><extURI>urn:ietf:params:xml:ns:epp:fee-1.0</extURI></svcExtension></svcs></login></command></epp>`
+	st.Expect(t, string(x), expected)
+
 	var v struct{}
 	err = xml.Unmarshal(x, &v)
 	st.Expect(t, err, nil)
 }
 
-func TestEncodeLoginChangePassword(t *testing.T) {
-	x, err := encodeLogin("jane", "battery", "horse", "1.0", "en", nil, nil)
+func TestEncodeLoginWithoutNewPassword(t *testing.T) {
+	x, err := encodeLogin("user123", "pass123", "", "1.0", "en", []string{ObjDomain}, nil)
 	st.Expect(t, err, nil)
-	st.Expect(t, string(x), `<?xml version="1.0" encoding="UTF-8"?>
-<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><login><clID>jane</clID><pw>battery</pw><newPW>horse</newPW><options><version>1.0</version><lang>en</lang></options><svcs></svcs></login></command></epp>`)
+
+	expected := `<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><login><clID>user123</clID><pw>pass123</pw><options><version>1.0</version><lang>en</lang></options><svcs><objURI>urn:ietf:params:xml:ns:domain-1.0</objURI></svcs></login></command></epp>`
+	st.Expect(t, string(x), expected)
+
 	var v struct{}
 	err = xml.Unmarshal(x, &v)
 	st.Expect(t, err, nil)
-}
-
-var (
-	testObjects = []string{
-		ObjContact,
-		ObjDomain,
-		ObjFinance,
-		ObjHost,
-	}
-	testExtensions = []string{
-		ExtCharge,
-		ExtFee05,
-		ExtFee06,
-		ExtIDN,
-		ExtLaunch,
-		ExtRGP,
-		ExtSecDNS,
-	}
-)
-
-func BenchmarkEncodeLogin(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		encodeLogin("jane", "battery", "horse", "1.0", "en", testObjects, testExtensions)
-	}
 }

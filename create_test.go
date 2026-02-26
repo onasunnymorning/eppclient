@@ -53,3 +53,47 @@ func TestEncodeDomainCreateWithFee(t *testing.T) {
 	err = xml.Unmarshal(x, &v)
 	st.Expect(t, err, nil)
 }
+
+func TestEncodeDomainCreateLaunchPhase(t *testing.T) {
+	extData := map[string]string{
+		"launch:phase": "sunrise",
+	}
+	x, err := encodeDomainCreate(nil, "example.com", 2, "y", "auth123", "", nil, nil, extData)
+	st.Expect(t, err, nil)
+	expected := `<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><create><domain:create xmlns:domain="urn:ietf:params:xml:ns:domain-1.0"><domain:name>example.com</domain:name><domain:period unit="y">2</domain:period><domain:authInfo><domain:pw>auth123</domain:pw></domain:authInfo></domain:create></create><extension><launch:create xmlns:launch="urn:ietf:params:xml:ns:launch-1.0"><launch:phase>sunrise</launch:phase></launch:create></extension></command></epp>`
+	st.Expect(t, string(x), expected)
+
+	var v struct{}
+	err = xml.Unmarshal(x, &v)
+	st.Expect(t, err, nil)
+}
+
+func TestEncodeDomainCreateLaunchPhaseWithFee(t *testing.T) {
+	extData := map[string]string{
+		"fee:fee":      "100.00",
+		"fee:currency": "USD",
+		"launch:phase": "sunrise",
+	}
+	x, err := encodeDomainCreate(nil, "example.com", 2, "y", "auth123", "", nil, nil, extData)
+	st.Expect(t, err, nil)
+	expected := `<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><create><domain:create xmlns:domain="urn:ietf:params:xml:ns:domain-1.0"><domain:name>example.com</domain:name><domain:period unit="y">2</domain:period><domain:authInfo><domain:pw>auth123</domain:pw></domain:authInfo></domain:create></create><extension><fee:create xmlns:fee="urn:ietf:params:xml:ns:epp:fee-1.0"><fee:currency>USD</fee:currency><fee:fee>100.00</fee:fee></fee:create><launch:create xmlns:launch="urn:ietf:params:xml:ns:launch-1.0"><launch:phase>sunrise</launch:phase></launch:create></extension></command></epp>`
+	st.Expect(t, string(x), expected)
+
+	var v struct{}
+	err = xml.Unmarshal(x, &v)
+	st.Expect(t, err, nil)
+}
+
+func TestEncodeHostCreate(t *testing.T) {
+	x, err := encodeHostCreate(nil, "ns1.example.com", []string{"192.0.2.1"}, []string{"2001:db8::1"})
+	st.Expect(t, err, nil)
+	expected := `<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><create><host:create xmlns:host="urn:ietf:params:xml:ns:host-1.0"><host:name>ns1.example.com</host:name><host:addr ip="v4">192.0.2.1</host:addr><host:addr ip="v6">2001:db8::1</host:addr></host:create></create></command></epp>`
+	st.Expect(t, string(x), expected)
+
+	var v struct{}
+	err = xml.Unmarshal(x, &v)
+	st.Expect(t, err, nil)
+}
