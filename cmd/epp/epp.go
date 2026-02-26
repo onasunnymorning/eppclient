@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 var (
 	profileName string
 	verbose     bool
+	version     = "dev"
+	commit      = "none"
 )
 
 func main() {
@@ -41,6 +44,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  raw     Send raw XML from a file or stdin\n")
 		fmt.Fprintf(os.Stderr, "  info    Get domain info\n")
 		fmt.Fprintf(os.Stderr, "  update  Update domain, contact or host\n")
+		fmt.Fprintf(os.Stderr, "  version Print version information\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
 	}
@@ -79,6 +83,11 @@ func main() {
 
 	// Check usage before connecting
 	checkUsage(cmd, subArgs)
+
+	if cmd == "version" {
+		runVersion()
+		os.Exit(0)
+	}
 
 	cfg, err := loadConfig(profileName)
 	if err != nil {
@@ -220,7 +229,13 @@ func checkUsage(cmd string, args []string) {
 			fmt.Fprintf(os.Stderr, "Unknown update type: %s. Use 'domain', 'contact' or 'host'.\n", sub)
 			os.Exit(1)
 		}
+	case "version":
+		// No args needed
 	}
+}
+
+func runVersion() {
+	fmt.Printf("version.BuildInfo{Version:%q, GitCommit:%q, GoVersion:%q}\n", version, commit, runtime.Version())
 }
 
 func connect(cfg *Config) *epp.Conn {
