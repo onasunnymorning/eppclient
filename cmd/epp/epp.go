@@ -292,7 +292,7 @@ func connect(cfg *Config) *epp.Conn {
 	color.Fprintf(os.Stderr, "Logging in as %s...\n", cfg.User)
 	logger = epp.DebugLogger
 	epp.DebugLogger = nil
-	err = c.Login(cfg.User, cfg.Password, "")
+	_, err = c.Login(cfg.User, cfg.Password, "")
 	epp.DebugLogger = logger
 	fatalif(err)
 

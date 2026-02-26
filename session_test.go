@@ -2,7 +2,6 @@ package epp
 
 import (
 	"encoding/xml"
-	"net"
 	"testing"
 
 	"github.com/nbio/st"
