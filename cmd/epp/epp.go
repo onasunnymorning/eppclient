@@ -148,7 +148,7 @@ func checkUsage(cmd string, args []string) {
 	switch cmd {
 	case "check":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp check <domain>...")
+			fmt.Fprintln(os.Stderr, "Usage: epp check [-phase phase] <domain>...")
 			os.Exit(1)
 		}
 	case "info":
@@ -300,13 +300,34 @@ func connect(cfg *Config) *epp.Conn {
 }
 
 func runCheck(c *epp.Conn, args []string) {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp check <domain>...")
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	phase := fs.String("phase", "", "launch phase (e.g., sunrise, open)")
+	period := fs.Int("period", 1, "registration period in years")
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: epp check [-phase phase] [-period N] <domain>...")
 		os.Exit(1)
 	}
 
 	start := time.Now()
-	dc, err := c.CheckDomain(args...)
+	var dc *epp.DomainCheckResponse
+	var err error
+
+	extData := make(map[string]string)
+	if *phase != "" {
+		extData["launch:phase"] = *phase
+		extData["fee:phase"] = *phase
+	}
+
+	extData["fee:period"] = fmt.Sprintf("%d", *period)
+
+	if len(extData) > 0 {
+		dc, err = c.CheckDomainExtensions(fs.Args(), extData)
+	} else {
+		dc, err = c.CheckDomain(fs.Args()...)
+	}
+
 	logif(err)
 	printDCR(dc)
 	qdur := time.Since(start)

@@ -147,7 +147,19 @@ func encodeDomainCheck(greeting *Greeting, domains []string, extData map[string]
 
 		// ExtFee10 uses global commands on this server (and typically in fee-1.0 when not using objects)
 		if feeURN == ExtFee10 {
-			buf.WriteString(fmt.Sprintf(`<fee:command name="create"%s/>`, feePhase))
+			period := extData["fee:period"]
+			if period == "" {
+				period = "1"
+			}
+
+			periodEl := fmt.Sprintf(`<fee:period unit="y">%s</fee:period>`, period)
+
+			if feePhase != "" {
+				// The user specifically wants period nested in command when phase is used
+				buf.WriteString(fmt.Sprintf(`<fee:command name="create"%s>%s</fee:command>`, feePhase, periodEl))
+			} else {
+				buf.WriteString(fmt.Sprintf(`<fee:command name="create"%s/>`, feePhase))
+			}
 			buf.WriteString(fmt.Sprintf(`<fee:command name="renew"%s/>`, feePhase))
 			buf.WriteString(fmt.Sprintf(`<fee:command name="restore"%s/>`, feePhase))
 			buf.WriteString(fmt.Sprintf(`<fee:command name="transfer"%s/>`, feePhase))

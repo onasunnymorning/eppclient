@@ -674,7 +674,7 @@ func TestEncodeDomainCheckFeePhaseSubphase(t *testing.T) {
 	x, err := encodeDomainCheck(&greeting, []string{"example.com"}, extData)
 	st.Expect(t, err, nil)
 	expected := `<?xml version="1.0" encoding="UTF-8"?>
-<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><check><domain:check xmlns:domain="urn:ietf:params:xml:ns:domain-1.0"><domain:name>example.com</domain:name></domain:check></check><extension><fee:check xmlns:fee="urn:ietf:params:xml:ns:epp:fee-1.0"><fee:command name="create" phase="sunrise" subphase="testsub"/><fee:command name="renew" phase="sunrise" subphase="testsub"/><fee:command name="restore" phase="sunrise" subphase="testsub"/><fee:command name="transfer" phase="sunrise" subphase="testsub"/></fee:check></extension></command></epp>`
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0"><command><check><domain:check xmlns:domain="urn:ietf:params:xml:ns:domain-1.0"><domain:name>example.com</domain:name></domain:check></check><extension><fee:check xmlns:fee="urn:ietf:params:xml:ns:epp:fee-1.0"><fee:command name="create" phase="sunrise" subphase="testsub"><fee:period unit="y">1</fee:period></fee:command><fee:command name="renew" phase="sunrise" subphase="testsub"/><fee:command name="restore" phase="sunrise" subphase="testsub"/><fee:command name="transfer" phase="sunrise" subphase="testsub"/></fee:check></extension></command></epp>`
 	st.Expect(t, string(x), expected)
 	var v struct{}
 	err = xml.Unmarshal(x, &v)
