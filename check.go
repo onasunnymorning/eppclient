@@ -506,6 +506,12 @@ func init() {
 		})
 		return nil
 	})
+	scanResponse.MustHandleCharData(path+">cd>currency", func(c *xx.Context) error {
+		charges := c.Value.(*Response).DomainCheckResponse.Charges
+		charge := &charges[len(charges)-1]
+		charge.Currency = string(c.CharData)
+		return nil
+	})
 
 	// Scan fee-0.21 phase and subphase into Charges Category and CategoryName, respectively
 	// FIXME: stop mangling fee extensions into charges
