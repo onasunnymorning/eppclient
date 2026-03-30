@@ -78,7 +78,10 @@ func main() {
 	}()
 
 	fmt.Println("EPP Slack Bot started via Socket Mode! Waiting for commands...")
-	client.Run()
+	err := client.Run()
+	if err != nil {
+		log.Fatalf("Socket mode run error: %v", err)
+	}
 }
 
 func handleEppCommand(api *slack.Client, cmd slack.SlashCommand, cfg *Config) {
@@ -104,7 +107,7 @@ func handleEppCommand(api *slack.Client, cmd slack.SlashCommand, cfg *Config) {
 	}
 
 	// Format results
-	blocks := buildResultBlocks(dcr, cfg.Addr)
+	blocks := buildResultBlocks(dcr, cfg)
 	
 	// Assuming you want the result visible to everyone in the channel, we post back normally.
 	_, _, err = api.PostMessage(cmd.ChannelID, slack.MsgOptionBlocks(blocks...))
@@ -121,7 +124,7 @@ func replyError(api *slack.Client, channelID, userID, text string) {
 	)
 }
 
-func buildResultBlocks(dcr *epp.DomainCheckResponse, serverAddr string) []slack.Block {
+func buildResultBlocks(dcr *epp.DomainCheckResponse, cfg *Config) []slack.Block {
 	if dcr == nil || len(dcr.Checks) == 0 {
 		return []slack.Block{
 			slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", "No domains checked.", false, false), nil, nil),
@@ -131,8 +134,8 @@ func buildResultBlocks(dcr *epp.DomainCheckResponse, serverAddr string) []slack.
 	var blocks []slack.Block
 	blocks = append(blocks, slack.NewHeaderBlock(slack.NewTextBlockObject("plain_text", "Domain Check Results 📡", false, false)))
 
-	// Context block for server used
-	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Server: *%s*", serverAddr), false, false)))
+	// Context block for server and user used
+	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Server: *%s* | User: *%s*", cfg.Addr, cfg.User), false, false)))
 
 	for _, c := range dcr.Checks {
 		var icon, statusText string
@@ -171,13 +174,17 @@ func buildResultBlocks(dcr *epp.DomainCheckResponse, serverAddr string) []slack.
 
 			for _, f := range cg.Fees {
 				curr := cg.Currency
+				
+				// Pull default currency from .env if the registry doesn't explicitly return one.
 				if curr == "" {
 					curr = os.Getenv("DEFAULT_CURRENCY")
-					if curr == "" {
-						curr = "USD"
-					}
 				}
-				feeText += fmt.Sprintf("    _%s_: %s %s", f.Name, f.Amount, curr)
+				
+				if curr != "" {
+					feeText += fmt.Sprintf("    _%s_: %s %s", f.Name, f.Amount, curr)
+				} else {
+					feeText += fmt.Sprintf("    _%s_: %s", f.Name, f.Amount)
+				}
 				
 				var attrs []string
 				if f.Standard {
