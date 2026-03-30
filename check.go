@@ -222,9 +222,10 @@ func encodePriceCheck(domains []string) ([]byte, error) {
 
 // DomainCheckResponse represents an EPP <response> for a domain check.
 type DomainCheckResponse struct {
-	Domain  string
-	Checks  []DomainCheck
-	Charges []DomainCharge
+	Domain   string
+	Currency string // Overall currency for the response
+	Checks   []DomainCheck
+	Charges  []DomainCharge
 }
 
 // DomainCheck represents an EPP <chkData> and associated extension data.
@@ -431,9 +432,13 @@ func init() {
 	})
 
 	path = "epp > response > extension > " + ExtFee10 + " chkData"
+	scanResponse.MustHandleCharData(path+">currency", func(c *xx.Context) error {
+		c.Value.(*Response).DomainCheckResponse.Currency = string(c.CharData)
+		return nil
+	})
 	scanResponse.MustHandleStartElement(path+">cd", func(c *xx.Context) error {
 		dcr := &c.Value.(*Response).DomainCheckResponse
-		dcr.Charges = append(dcr.Charges, DomainCharge{})
+		dcr.Charges = append(dcr.Charges, DomainCharge{Currency: dcr.Currency})
 		return nil
 	})
 	scanResponse.MustHandleCharData(path+">cd>objID", func(c *xx.Context) error {
@@ -469,12 +474,6 @@ func init() {
 			GracePeriod: c.Attr("", "grace-period"),
 		}
 		charge.Fees = append(charge.Fees, fee)
-		return nil
-	})
-	scanResponse.MustHandleCharData(path+">cd>currency", func(c *xx.Context) error {
-		charges := c.Value.(*Response).DomainCheckResponse.Charges
-		charge := &charges[len(charges)-1]
-		charge.Currency = string(c.CharData)
 		return nil
 	})
 
