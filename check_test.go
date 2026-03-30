@@ -495,6 +495,7 @@ func TestScanCheckDomainResponseWithFee11(t *testing.T) {
 	st.Expect(t, dcr.Checks[0].Reason, "")
 	st.Expect(t, len(dcr.Charges), 1)
 	st.Expect(t, dcr.Charges[0].Domain, "example.com")
+	st.Expect(t, dcr.Charges[0].Currency, "USD")
 	st.Expect(t, dcr.Charges[0].Category, "premium")
 	st.Expect(t, dcr.Charges[0].CategoryName, "")
 }
@@ -646,6 +647,7 @@ func TestScanCheckDomainResponseWithFee10(t *testing.T) {
 	st.Expect(t, dcr.Checks[0].Available, true)
 	st.Expect(t, dcr.Checks[0].Reason, "")
 	st.Expect(t, len(dcr.Charges), 1)
+	st.Expect(t, dcr.Charges[0].Currency, "USD")
 	st.Expect(t, len(dcr.Charges[0].Fees), 1)
 	st.Expect(t, dcr.Charges[0].Fees[0].Amount, "300.00")
 	st.Expect(t, dcr.Charges[0].Fees[0].Description, "domain creation in phase 'open'")

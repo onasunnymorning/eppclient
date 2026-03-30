@@ -175,11 +175,6 @@ func buildResultBlocks(dcr *epp.DomainCheckResponse, cfg *Config) []slack.Block 
 			for _, f := range cg.Fees {
 				curr := cg.Currency
 				
-				// Pull default currency from .env if the registry doesn't explicitly return one.
-				if curr == "" {
-					curr = os.Getenv("DEFAULT_CURRENCY")
-				}
-				
 				if curr != "" {
 					feeText += fmt.Sprintf("    _%s_: %s %s", f.Name, f.Amount, curr)
 				} else {

@@ -1102,13 +1102,14 @@ func printDCR(dcr *epp.DomainCheckResponse) {
 			if c.Category != "" {
 				color.Printf(" @{.}category=%s", c.Category)
 			}
-			if c.Currency != "" {
-				color.Printf(" @{.}currency=%s", c.Currency)
-			}
 			color.Println()
 
 			for _, f := range c.Fees {
-				color.Printf("    %-10s @{w}%8s", f.Name, f.Amount)
+				currStr := ""
+				if c.Currency != "" {
+					currStr = " " + c.Currency
+				}
+				color.Printf("    %-10s @{w}%8s%s", f.Name, f.Amount, currStr)
 
 				attrs := []string{}
 				if f.Standard {
