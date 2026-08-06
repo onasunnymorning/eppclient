@@ -86,6 +86,16 @@ The delay accepts Go duration values such as `500ms`, `5s`, or `1m`. Batch mode 
 
 Because raw XML output is enabled, credentials contained in batch XML may be printed to the terminal. Protect batch files and captured terminal output accordingly.
 
+#### Raw XML Log Files
+
+Every command that produces raw XML also saves it in the current directory. Log filenames use the command start time in local time with a 24-hour clock:
+
+```text
+output-YYYYMMDD-hhmmss.log
+```
+
+For example, a command started on 6 August 2026 at 17:04:05 creates `output-20260806-170405.log`. If multiple commands start within the same second, later files receive a numeric suffix such as `output-20260806-170405-2.log` so existing logs are never overwritten. Log files are created with owner-only permissions (`0600`) and are excluded by the repository's `.gitignore`. They can contain EPP credentials and personal data, so store and share them carefully.
+
 ## Library Installation
 
 `go get github.com/onasunnymorning/eppclient`

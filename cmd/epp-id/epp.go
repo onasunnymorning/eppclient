@@ -81,6 +81,7 @@ func main() {
 
 	cmd := args[0]
 	subArgs := args[1:]
+	commandStartedAt := time.Now()
 
 	// Check usage before connecting
 	checkUsage(cmd, subArgs)
@@ -109,12 +110,12 @@ func main() {
 			// but for this CLI it's probably fine to treat all panics as "something went wrong".
 			closeConnection(conn, automaticSession)
 			epp.DebugLogger = logger
-			printRawXML(os.Stderr, &logBuf)
+			printAndSaveRawXML(os.Stderr, ".", commandStartedAt, &logBuf)
 			os.Exit(1)
 		}
 		closeConnection(conn, automaticSession)
 		epp.DebugLogger = logger
-		printRawXML(os.Stderr, &logBuf)
+		printAndSaveRawXML(os.Stderr, ".", commandStartedAt, &logBuf)
 	}()
 
 	switch cmd {

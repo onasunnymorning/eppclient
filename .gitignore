@@ -4,4 +4,5 @@ sample.xml
 local/*
 /epp
 /epp-id
+output-*.log
 .env*
