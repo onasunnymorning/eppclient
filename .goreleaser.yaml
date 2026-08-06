@@ -43,15 +43,3 @@ changelog:
       order: 1
     - title: Others
       order: 999
-
-brews:
-  - name: epp-id
-    description: "EPP command-line tool"
-    homepage: "https://github.com/onasunnymorning/eppclient"
-    directory: Formula
-    repository:
-      owner: onasunnymorning
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    install: |
-      bin.install "epp-id"

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	epp "github.com/onasunnymorning/eppclient"
+	epp "github.com/freddymanullang/epp-id"
 	"github.com/wsxiaoys/terminal/color"
 )
 

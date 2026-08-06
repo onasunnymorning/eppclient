@@ -1,21 +1,37 @@
-# EPP for Go
+# epp-id
 
-[![build status](https://github.com/onasunnymorning/eppclient/actions/workflows/goreleaser.yaml/badge.svg)](https://github.com/onasunnymorning/eppclient/actions)
-[![pkg.go.dev](https://img.shields.io/badge/docs-pkg.go.dev-blue.svg)](https://pkg.go.dev/github.com/onasunnymorning/eppclient)
+[![build status](https://github.com/freddymanullang/epp-id/actions/workflows/goreleaser.yaml/badge.svg)](https://github.com/freddymanullang/epp-id/actions)
+[![pkg.go.dev](https://img.shields.io/badge/docs-pkg.go.dev-blue.svg)](https://pkg.go.dev/github.com/freddymanullang/epp-id)
 
 EPP ([Extensible Provisioning Protocol](https://tools.ietf.org/html/rfc5730)) client for [Go](https://golang.org/).
 
-## EPP CLI
+## epp-id CLI
 
 The `epp-id` command-line tool allows you to interact with EPP servers directly.
 
-### Installation (Homebrew)
+### Installation (Linux Server)
 
-You can install the `epp-id` CLI using Homebrew:
+Linux installation requires Git and Go 1.25 or newer. Install a supported Go release by following the [official Go installation guide](https://go.dev/doc/install), then build `epp-id` from source:
 
 ```bash
-brew tap onasunnymorning/tap
-brew install epp-id
+sudo apt-get update
+sudo apt-get install -y git ca-certificates
+
+git clone https://github.com/freddymanullang/epp-id.git
+cd epp-id
+go build -trimpath -o epp-id ./cmd/epp-id
+sudo install -m 0755 epp-id /usr/local/bin/epp-id
+
+epp-id version
+```
+
+Run a server command once to create the credentials template, then edit it with the EPP server address and account details:
+
+```bash
+epp-id check example.id
+nano ~/.epp/credentials
+chmod 600 ~/.epp/credentials
+epp-id check example.id
 ```
 
 ### Usage
@@ -26,24 +42,24 @@ The basic syntax is `epp-id [options] <command> [arguments]`.
 
 ```bash
 # Check domain availability and pricing (with optional launch phase and fee)
-epp-id check example.com
-epp-id check -phase sunrise -fee 10.00 -currency USD example.com
+epp-id check example.id
+epp-id check -phase sunrise -fee 10.00 -currency USD example.id
 
 # Get detailed domain info
-epp-id info domain example.com
+epp-id info domain example.id
 
 # Create a new domain (with optional launch phase and fee)
-epp-id create domain example.com -period 1 -auth secret123 -registrant contact-id
-epp-id create domain example.com -period 1 -auth secret123 -registrant contact-id -phase sunrise -fee 10.00 -currency USD
+epp-id create domain example.id -period 1 -auth secret123 -registrant contact-id
+epp-id create domain example.id -period 1 -auth secret123 -registrant contact-id -phase sunrise -fee 10.00 -currency USD
 
 # Renew a domain (automatically fetches current expiry if -exp is omitted)
-epp-id renew domain example.com -period 1
+epp-id renew domain example.id -period 1
 
 # Delete a domain
-epp-id delete domain example.com
+epp-id delete domain example.id
 
 # Restore a domain (RGP)
-epp-id restore domain example.com
+epp-id restore domain example.id
 
 # Check EPP poll messages
 epp-id poll
@@ -52,7 +68,7 @@ epp-id poll
 epp-id poll -ack 12345
 
 # Transfer operations (query, request, approve, reject, cancel)
-epp-id transfer domain example.com -op request -auth secret123
+epp-id transfer domain example.id -op request -auth secret123
 ```
 
 #### Contact, Host & Other Operations
@@ -62,13 +78,13 @@ epp-id transfer domain example.com -op request -auth secret123
 epp-id version
 
 # Create a new contact
-epp-id create contact -id CID-1 -email user@example.com -name "John Doe" -city "New York" -cc US -auth secret123
+epp-id create contact -id CID-1 -email user@example.id -name "John Doe" -city "Jakarta" -cc ID -auth secret123
 
 # Create a new host
-epp-id create host -ips 192.0.2.1,192.0.2.2 -v6 2001:db8::1 ns1.example.com
+epp-id create host -ips 192.0.2.1,192.0.2.2 -v6 2001:db8::1 ns1.example.id
 
 # Update a domain (add/remove nameservers, statuses)
-epp-id update domain -add-ns ns1.example.net,ns2.example.net -rem-ns ns1.example.com example.com
+epp-id update domain -add-ns ns1.example.id,ns2.example.id -rem-ns ns3.example.id example.id
 
 # Send raw XML from a file
 epp-id raw request.xml
@@ -98,19 +114,19 @@ For example, a command started on 6 August 2026 at 17:04:05 creates `output-2026
 
 ## Library Installation
 
-`go get github.com/onasunnymorning/eppclient`
+`go get github.com/freddymanullang/epp-id`
 
 ## Library Usage
 
 ```go
 import (
 	"crypto/tls"
-	"github.com/onasunnymorning/eppclient"
+	epp "github.com/freddymanullang/epp-id"
 )
 
 // ...
 
-tconn, err := tls.Dial("tcp", "epp.example.com:700", nil)
+tconn, err := tls.Dial("tcp", "epp.example.id:700", nil)
 if err != nil {
 	return err
 }
@@ -123,6 +139,6 @@ if err != nil {
 // ...
 ```
 
-## Author
+## Maintainer
 
-© 2021-2025 nb.io LLC & onasunnymorning
+[@freddymanullang](https://github.com/freddymanullang)
