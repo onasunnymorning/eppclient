@@ -19,7 +19,7 @@ type Config struct {
 	CACert   string
 }
 
-func loadConfig(profile string) (*Config, error) {
+func loadConfig(profile string, requireUser bool) (*Config, error) {
 	usr, err := user.Current()
 	if err != nil {
 		return nil, err
@@ -84,7 +84,11 @@ func loadConfig(profile string) (*Config, error) {
 		return nil, err
 	}
 
-	if cfg.User == "" {
+	if cfg.Addr == "" {
+		return nil, fmt.Errorf("address not found in profile %s", profile)
+	}
+
+	if requireUser && cfg.User == "" {
 		return nil, fmt.Errorf("user not found in profile %s", profile)
 	}
 
