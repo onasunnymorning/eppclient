@@ -4,8 +4,8 @@
 version: 2
 
 builds:
-  - main: ./cmd/epp
-    binary: epp
+  - main: ./cmd/epp-id
+    binary: epp-id
     env:
       - CGO_ENABLED=0
     goos:
@@ -45,7 +45,7 @@ changelog:
       order: 999
 
 brews:
-  - name: epp
+  - name: epp-id
     description: "EPP command-line tool"
     homepage: "https://github.com/onasunnymorning/eppclient"
     directory: Formula
@@ -54,4 +54,4 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     install: |
-      bin.install "epp"
+      bin.install "epp-id"

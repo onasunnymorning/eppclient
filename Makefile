@@ -3,4 +3,4 @@ test:
 	go test -v ./...
 
 build:
-	go build -o epp ./cmd/epp
+	go build -o epp-id ./cmd/epp-id

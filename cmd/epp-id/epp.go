@@ -52,8 +52,8 @@ func main() {
 	// We need to parse flags before subcommands to get -profile and -v
 	// But flag.Parse() consumes args. So we need to be careful.
 	// Actually, standard go flag pkg stops at non-flag args.
-	// So `epp -profile foo check domain.com` works.
-	// `epp check -profile foo` does NOT work for global flags if we do it this way.
+	// So `epp-id -profile foo check domain.com` works.
+	// `epp-id check -profile foo` does NOT work for global flags if we do it this way.
 	// But usually subcommands have their own flags.
 
 	if len(os.Args) < 2 {
@@ -62,7 +62,7 @@ func main() {
 	}
 
 	// Manual flag parsing for global flags before subcommand
-	// This is a bit hacky but allows `epp -v check ...`
+	// This is a bit hacky but allows `epp-id -v check ...`
 	// A better way is to parse, then look at remaining args.
 	flag.Parse()
 
@@ -147,12 +147,12 @@ func checkUsage(cmd string, args []string) {
 	switch cmd {
 	case "check":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp check [-phase phase] <domain>...")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id check [-phase phase] <domain>...")
 			os.Exit(1)
 		}
 	case "info":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp info <domain|contact> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id info <domain|contact> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -162,7 +162,7 @@ func checkUsage(cmd string, args []string) {
 		}
 	case "delete":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp delete <domain|contact|host> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id delete <domain|contact|host> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -172,7 +172,7 @@ func checkUsage(cmd string, args []string) {
 		}
 	case "create":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp create <domain|contact|host> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id create <domain|contact|host> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -182,7 +182,7 @@ func checkUsage(cmd string, args []string) {
 		}
 	case "renew":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp renew <domain> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id renew <domain> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -192,7 +192,7 @@ func checkUsage(cmd string, args []string) {
 		}
 	case "restore":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp restore <domain> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id restore <domain> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -201,11 +201,11 @@ func checkUsage(cmd string, args []string) {
 			os.Exit(1)
 		}
 	case "poll":
-		// Usage: epp poll [-ack id]
+		// Usage: epp-id poll [-ack id]
 		// No strict enforcement needed for req
 	case "transfer":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp transfer <domain> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id transfer <domain> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -215,12 +215,12 @@ func checkUsage(cmd string, args []string) {
 		}
 	case "raw":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp raw <file>")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id raw <file>")
 			os.Exit(1)
 		}
 	case "update":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp update <domain|contact|host> [options]")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id update <domain|contact|host> [options]")
 			os.Exit(1)
 		}
 		sub := args[0]
@@ -305,7 +305,7 @@ func runCheck(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp check [-phase phase] [-period N] <domain>...")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id check [-phase phase] [-period N] <domain>...")
 		os.Exit(1)
 	}
 
@@ -350,7 +350,7 @@ func runInfo(c *epp.Conn, args []string) {
 
 func runInfoDomain(c *epp.Conn, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp info domain <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id info domain <domain>")
 		os.Exit(1)
 	}
 	res, err := c.DomainInfo(args[0], nil)
@@ -369,7 +369,7 @@ func runInfoContact(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp info contact [-auth code] <contact-id>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id info contact [-auth code] <contact-id>")
 		os.Exit(1)
 	}
 
@@ -402,7 +402,7 @@ func runDelete(c *epp.Conn, args []string) {
 
 func runDeleteDomain(c *epp.Conn, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp delete domain <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id delete domain <domain>")
 		os.Exit(1)
 	}
 	err := c.DeleteDomain(args[0], nil)
@@ -412,7 +412,7 @@ func runDeleteDomain(c *epp.Conn, args []string) {
 
 func runDeleteContact(c *epp.Conn, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp delete contact <contact-id>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id delete contact <contact-id>")
 		os.Exit(1)
 	}
 	err := c.DeleteContact(args[0], nil)
@@ -422,7 +422,7 @@ func runDeleteContact(c *epp.Conn, args []string) {
 
 func runDeleteHost(c *epp.Conn, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp delete host <host>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id delete host <host>")
 		os.Exit(1)
 	}
 	err := c.DeleteHost(args[0])
@@ -442,13 +442,6 @@ func runCreate(c *epp.Conn, args []string) {
 	case "host":
 		runCreateHost(c, subArgs)
 	default:
-		// Fallback for backward compatibility or simple "epp create domain.com"?
-		// The user explicitly asked for "move to epp create domain", so enforcing subcommand is correct.
-		// However, it's nice to allow "epp create domain.com" if it doesn't look like "contact"?
-		// But "domain" IS the subcommand.
-		// If I type `epp create example.com` -> cmd="example.com".
-		// Maybe warning? Or just fail.
-		// User: "lets move 'epp create' to 'epp create domain'"
 		fmt.Fprintf(os.Stderr, "Unknown create type: %s. Use 'domain' or 'contact'.\n", cmd)
 		os.Exit(1)
 	}
@@ -471,7 +464,7 @@ func runCreateDomain(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp create domain [-period N] [-auth code] [-registrant id] ... <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id create domain [-period N] [-auth code] [-registrant id] ... <domain>")
 		os.Exit(1)
 	}
 
@@ -532,7 +525,7 @@ func runCreateContact(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if *id == "" || *email == "" || *name == "" || *city == "" || *cc == "" || *auth == "" {
-		fmt.Fprintln(os.Stderr, "Usage: epp create contact -id <id> -email <email> -name <name> -city <city> -cc <cc> -auth <auth> [-voice number] [options]")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id create contact -id <id> -email <email> -name <name> -city <city> -cc <cc> -auth <auth> [-voice number] [options]")
 		fs.PrintDefaults()
 		os.Exit(1)
 	}
@@ -559,7 +552,7 @@ func runCreateHost(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp create host [-ips v4,v4] [-v6 v6,v6] <host>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id create host [-ips v4,v4] [-v6 v6,v6] <host>")
 		os.Exit(1)
 	}
 
@@ -592,13 +585,6 @@ func runRenew(c *epp.Conn, args []string) {
 	case "domain":
 		runRenewDomain(c, subArgs)
 	default:
-		// Fallback or error?
-		// Since "epp renew domain" is what we want, we should enforce it?
-		// But existing "epp renew" was convenient.
-		// "epp renew domain.com" was the old way.
-		// If cmd doesn't look like a subcommand (no "domain" keyword), maybe assume old behavior?
-		// But cleaner to be strict if we are standardizing.
-		// "unknown command %s".
 		fmt.Fprintf(os.Stderr, "Unknown renewal type: %s. Use 'domain'.\n", cmd)
 		os.Exit(1)
 	}
@@ -613,7 +599,7 @@ func runRenewDomain(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp renew domain [-exp YYYY-MM-DD] [-period N] [-fee amount] [-currency code] <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id renew domain [-exp YYYY-MM-DD] [-period N] [-fee amount] [-currency code] <domain>")
 		os.Exit(1)
 	}
 
@@ -662,7 +648,7 @@ func runRestore(c *epp.Conn, args []string) {
 
 func runRestoreDomain(c *epp.Conn, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp restore domain <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id restore domain <domain>")
 		os.Exit(1)
 	}
 	// Restore often requires RGP extension
@@ -725,7 +711,7 @@ func runTransferDomain(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp transfer domain [-op op] [-auth code] [-period N] [-fee amount] [-currency code] <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id transfer domain [-op op] [-auth code] [-period N] [-fee amount] [-currency code] <domain>")
 		os.Exit(1)
 	}
 
@@ -760,7 +746,7 @@ func runTransferDomain(c *epp.Conn, args []string) {
 
 func runRaw(c *epp.Conn, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp raw <file>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id raw <file>")
 		os.Exit(1)
 	}
 
@@ -818,7 +804,7 @@ func runUpdateDomain(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp update domain [options] <domain>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id update domain [options] <domain>")
 		fs.PrintDefaults()
 		os.Exit(1)
 	}
@@ -908,7 +894,7 @@ func runUpdateContact(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp update contact [options] <contact-id>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id update contact [options] <contact-id>")
 		fs.PrintDefaults()
 		os.Exit(1)
 	}
@@ -978,7 +964,7 @@ func runUpdateHost(c *epp.Conn, args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: epp update host [options] <host>")
+		fmt.Fprintln(os.Stderr, "Usage: epp-id update host [options] <host>")
 		fs.PrintDefaults()
 		os.Exit(1)
 	}
