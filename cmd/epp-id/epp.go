@@ -86,6 +86,19 @@ func main() {
 	// Check usage before connecting
 	checkUsage(cmd, subArgs)
 
+	configDir, configInitialized, err := installUserConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error installing sample configuration: %v\n", err)
+		os.Exit(1)
+	}
+	if configInitialized {
+		fmt.Fprintf(os.Stderr, "Sample configuration installed at %s\n", configDir)
+		fmt.Fprintln(os.Stderr, "Edit credentials and replace the sample certificates before connecting.")
+		if cmd != "version" {
+			os.Exit(0)
+		}
+	}
+
 	if cmd == "version" {
 		runVersion()
 		os.Exit(0)
