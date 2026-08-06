@@ -30,6 +30,7 @@ The first execution automatically installs the embedded sample configuration und
 ```bash
 nano ~/.epp/credentials
 chmod 600 ~/.epp/credentials
+epp-id check ssl
 epp-id check example.id
 ```
 
@@ -95,6 +96,25 @@ mv "$HOME/.epp" "$HOME/.epp.backup"
 ### Usage
 
 The basic syntax is `epp-id [options] <command> [arguments]`.
+
+#### SSL Connection Test
+
+Test the TLS connection configured in the selected `~/.epp/credentials` profile without performing an EPP greeting or login:
+
+```bash
+epp-id check ssl
+epp-id -profile sandbox check ssl
+```
+
+The test connects to `addr`, loads the client certificate from `cert`, loads its private key from `key`, and uses `ca` to verify the server certificate. When `ca` is not configured, the system certificate pool is used. The handshake is restricted to TLS 1.2, matching an OpenSSL test with `-tls1_2`.
+
+Every attempt, including a failed connection or handshake, creates a diagnostic log in the current directory:
+
+```text
+test-ssl-YYYYMMDD-hhmmss.log
+```
+
+The log records TCP and TLS status, the negotiated cipher suite, server certificate details, errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
 
 #### Domain Operations
 
