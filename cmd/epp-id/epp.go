@@ -36,7 +36,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] <command> [arguments]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nCommands:\n")
-		fmt.Fprintf(os.Stderr, "  check   Check domain availability\n")
+		fmt.Fprintf(os.Stderr, "  check   Check domain availability or SSL connectivity\n")
 		fmt.Fprintf(os.Stderr, "  create  Create a domain\n")
 		fmt.Fprintf(os.Stderr, "  renew   Renew a domain\n")
 		fmt.Fprintf(os.Stderr, "  poll    Check EPP poll messages\n")
@@ -103,6 +103,18 @@ func main() {
 		runVersion()
 		os.Exit(0)
 	}
+	if isSSLCheck(cmd, subArgs) {
+		path, err := runSSLCheck(profileName, ".", commandStartedAt)
+		if path != "" {
+			fmt.Fprintf(os.Stderr, "SSL test log saved to %s\n", path)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "SSL connection test failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "SSL connection test succeeded")
+		return
+	}
 
 	automaticSession := cmd != "batch"
 	cfg, err := loadConfig(profileName, automaticSession)
@@ -167,7 +179,11 @@ func checkUsage(cmd string, args []string) {
 	switch cmd {
 	case "check":
 		if len(args) == 0 {
-			fmt.Fprintln(os.Stderr, "Usage: epp-id check [-phase phase] <domain>...")
+			fmt.Fprintln(os.Stderr, "Usage: epp-id check ssl | epp-id check [-phase phase] <domain>...")
+			os.Exit(1)
+		}
+		if args[0] == "ssl" && len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Usage: epp-id check ssl")
 			os.Exit(1)
 		}
 	case "info":
