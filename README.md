@@ -25,10 +25,9 @@ sudo install -m 0755 epp-id /usr/local/bin/epp-id
 epp-id version
 ```
 
-Run a server command once to create the credentials template, then edit it with the EPP server address and account details:
+The first execution automatically installs the embedded sample configuration under `~/.epp`. After `epp-id version` finishes, edit the generated credentials and replace the sample certificates before connecting:
 
 ```bash
-epp-id check example.id
 nano ~/.epp/credentials
 chmod 600 ~/.epp/credentials
 epp-id check example.id
@@ -36,7 +35,7 @@ epp-id check example.id
 
 ### Sample Configuration
 
-The repository includes a safe sample layout under `config/.epp`:
+The repository includes the following safe sample layout under `config/.epp`:
 
 ```text
 config/
@@ -50,15 +49,48 @@ config/
         └── example-batch.xml
 ```
 
-Copy the sample into your home directory, replace all `CHANGE_ME` values and certificate files, update the absolute paths in `credentials`, and restrict access to the private key:
+The `go build` command embeds this complete tree into the `epp-id` binary. On its first execution, the application creates any missing files under the current user's `~/.epp` directory and automatically updates certificate paths in `credentials` for that home directory. Existing files are never overwritten, so no manual copy is required.
+
+After building, run the binary once and edit the installed files directly:
 
 ```bash
-cp -R config/.epp "$HOME/"
-chmod 700 "$HOME/.epp" "$HOME/.epp/ssl"
+./epp-id version
+nano "$HOME/.epp/credentials"
 chmod 600 "$HOME/.epp/credentials" "$HOME/.epp/ssl/certificate.key"
 ```
 
-The committed certificate chain and private key are public test fixtures. Never use them for a real EPP account or server. `certificate.pem` contains the sample client certificate, intermediate CA certificate, and root CA certificate in that order.
+Replace all `CHANGE_ME` values, the certificate chain, and the private key before connecting to a real server. The embedded certificate chain and private key are public test fixtures. Never use them for a real EPP account or server. `certificate.pem` contains the sample client certificate, intermediate CA certificate, and root CA certificate in that order.
+
+### Update (Linux Server)
+
+Update the local source checkout, rebuild the binary, and install the new build over the existing executable:
+
+```bash
+cd /path/to/epp-id
+git checkout main
+git pull --ff-only origin main
+go test ./...
+go build -trimpath -o epp-id ./cmd/epp-id
+sudo install -m 0755 epp-id /usr/local/bin/epp-id
+epp-id version
+```
+
+Updating the binary does not overwrite files already stored under `~/.epp`.
+
+### Uninstall (Linux Server)
+
+Remove the installed executable and verify that it is no longer available:
+
+```bash
+sudo rm -f /usr/local/bin/epp-id
+command -v epp-id
+```
+
+The uninstall command intentionally preserves `~/.epp` because it may contain credentials, private keys, XML requests, and logs. To stop using that configuration without deleting it, move it to a backup location:
+
+```bash
+mv "$HOME/.epp" "$HOME/.epp.backup"
+```
 
 ### Usage
 
