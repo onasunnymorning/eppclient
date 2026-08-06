@@ -42,6 +42,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  poll    Check EPP poll messages\n")
 		fmt.Fprintf(os.Stderr, "  transfer Transfer a domain\n")
 		fmt.Fprintf(os.Stderr, "  raw     Send raw XML from a file or stdin\n")
+		fmt.Fprintf(os.Stderr, "  batch   Send EPP commands from an eppBatch XML file\n")
 		fmt.Fprintf(os.Stderr, "  info    Get domain info\n")
 		fmt.Fprintf(os.Stderr, "  update  Update domain, contact or host\n")
 		fmt.Fprintf(os.Stderr, "  version Print version information\n")
@@ -89,13 +90,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	cfg, err := loadConfig(profileName)
+	automaticSession := cmd != "batch"
+	cfg, err := loadConfig(profileName, automaticSession)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading credentials for profile %q: %v\n", profileName, err)
 		os.Exit(1)
 	}
 
-	conn := connect(cfg)
+	conn := connect(cfg, automaticSession)
 
 	defer func() {
 		logger := epp.DebugLogger
@@ -105,12 +107,12 @@ func main() {
 			// Just ensure we print the raw XML log and then exit 1.
 			// We can't easily distinguish our panic from others unless we use a custom type,
 			// but for this CLI it's probably fine to treat all panics as "something went wrong".
-			conn.Close()
+			closeConnection(conn, automaticSession)
 			epp.DebugLogger = logger
 			printRawXML(os.Stderr, &logBuf)
 			os.Exit(1)
 		}
-		conn.Close()
+		closeConnection(conn, automaticSession)
 		epp.DebugLogger = logger
 		printRawXML(os.Stderr, &logBuf)
 	}()
@@ -134,6 +136,8 @@ func main() {
 		runTransfer(conn, subArgs)
 	case "raw":
 		runRaw(conn, subArgs)
+	case "batch":
+		runBatch(conn, subArgs)
 	case "update":
 		runUpdate(conn, subArgs)
 	default:
@@ -218,6 +222,15 @@ func checkUsage(cmd string, args []string) {
 			fmt.Fprintln(os.Stderr, "Usage: epp-id raw <file>")
 			os.Exit(1)
 		}
+	case "batch":
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "Usage: epp-id batch <delay> <batch-file.xml>")
+			os.Exit(1)
+		}
+		if _, _, err := parseBatchArgs(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "update":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "Usage: epp-id update <domain|contact|host> [options]")
@@ -237,7 +250,7 @@ func runVersion() {
 	fmt.Printf("version.BuildInfo{Version:%q, GitCommit:%q, GoVersion:%q}\n", version, commit, runtime.Version())
 }
 
-func connect(cfg *Config) *epp.Conn {
+func connect(cfg *Config, automaticLogin bool) *epp.Conn {
 	// Set up TLS
 	tlsCfg := &tls.Config{
 		InsecureSkipVerify: true,
@@ -288,14 +301,24 @@ func connect(cfg *Config) *epp.Conn {
 	epp.DebugLogger = logger
 	fatalif(err)
 
-	color.Fprintf(os.Stderr, "Logging in as %s...\n", cfg.User)
-	logger = epp.DebugLogger
-	epp.DebugLogger = nil
-	_, err = c.Login(cfg.User, cfg.Password, "")
-	epp.DebugLogger = logger
-	fatalif(err)
+	if automaticLogin {
+		color.Fprintf(os.Stderr, "Logging in as %s...\n", cfg.User)
+		logger = epp.DebugLogger
+		epp.DebugLogger = nil
+		_, err = c.Login(cfg.User, cfg.Password, "")
+		epp.DebugLogger = logger
+		fatalif(err)
+	}
 
 	return c
+}
+
+func closeConnection(c *epp.Conn, automaticLogout bool) {
+	if automaticLogout {
+		_ = c.Close()
+		return
+	}
+	_ = c.Conn.Close()
 }
 
 func runCheck(c *epp.Conn, args []string) {

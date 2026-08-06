@@ -74,6 +74,18 @@ epp-id update domain -add-ns ns1.example.net,ns2.example.net -rem-ns ns1.example
 epp-id raw request.xml
 ```
 
+#### Batch Operations
+
+Batch files use an `<eppBatch>` root containing one or more complete EPP commands. The CLI sends each direct `<epp>...</epp>` child in order and waits only between commands:
+
+```bash
+epp-id batch 5s gabungan-epp.xml
+```
+
+The delay accepts Go duration values such as `500ms`, `5s`, or `1m`. Batch mode does not automatically log in or log out, so the file is responsible for including `<login>` and `<logout>` commands when the server requires them. Processing stops on the first transport error.
+
+Because raw XML output is enabled, credentials contained in batch XML may be printed to the terminal. Protect batch files and captured terminal output accordingly.
+
 ## Library Installation
 
 `go get github.com/onasunnymorning/eppclient`
