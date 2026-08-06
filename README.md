@@ -168,7 +168,17 @@ Every command that produces raw XML also saves it in the current directory. Log 
 output-YYYYMMDD-hhmmss.log
 ```
 
-For example, a command started on 6 August 2026 at 17:04:05 creates `output-20260806-170405.log`. If multiple commands start within the same second, later files receive a numeric suffix such as `output-20260806-170405-2.log` so existing logs are never overwritten. Log files are created with owner-only permissions (`0600`) and are excluded by the repository's `.gitignore`. They can contain EPP credentials and personal data, so store and share them carefully.
+For example, a command started on 6 August 2026 at 17:04:05 creates `output-20260806-170405.log`. If multiple commands start within the same second, later files receive a numeric suffix such as `output-20260806-170405-2.log` so existing logs are never overwritten.
+
+Each log ends with the command start time, end time, and total processing duration:
+
+```text
+Start Time: 2026-08-06 17:04:05.000 WIB
+End Time: 2026-08-06 17:04:10.125 WIB
+Duration Process: 5.125s
+```
+
+For batch operations, the duration covers the entire batch, including the delay between commands. Log files are created with owner-only permissions (`0600`) and are excluded by the repository's `.gitignore`. They can contain EPP credentials and personal data, so store and share them carefully.
 
 ## Library Installation
 

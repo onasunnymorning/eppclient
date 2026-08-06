@@ -41,10 +41,12 @@ func TestRawXMLLogFilename(t *testing.T) {
 
 func TestSaveRawXMLLog(t *testing.T) {
 	directory := t.TempDir()
-	timestamp := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	location := time.FixedZone("WIB", 7*60*60)
+	startedAt := time.Date(2026, time.August, 6, 17, 4, 5, 0, location)
+	endedAt := startedAt.Add(5*time.Second + 125*time.Millisecond)
 	rawXML := bytes.NewBufferString("REQUEST\n<epp>command</epp>\n\nRESPONSE\n<epp>result</epp>\n")
 
-	path, err := saveRawXMLLog(directory, timestamp, rawXML)
+	path, err := saveRawXMLLog(directory, startedAt, endedAt, rawXML)
 	if err != nil {
 		t.Fatalf("saveRawXMLLog() error = %v", err)
 	}
@@ -56,7 +58,11 @@ func TestSaveRawXMLLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(data), rawXML.String(); got != want {
+	want := rawXML.String() + "\n" +
+		"Start Time: 2026-08-06 17:04:05.000 WIB\n" +
+		"End Time: 2026-08-06 17:04:10.125 WIB\n" +
+		"Duration Process: 5.125s\n"
+	if got := string(data); got != want {
 		t.Fatalf("saved log = %q, want %q", got, want)
 	}
 
@@ -71,8 +77,9 @@ func TestSaveRawXMLLog(t *testing.T) {
 
 func TestSaveRawXMLLogSkipsEmptyBuffer(t *testing.T) {
 	directory := t.TempDir()
+	startedAt := time.Now()
 
-	path, err := saveRawXMLLog(directory, time.Now(), &bytes.Buffer{})
+	path, err := saveRawXMLLog(directory, startedAt, startedAt.Add(time.Second), &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("saveRawXMLLog() error = %v", err)
 	}
@@ -91,13 +98,14 @@ func TestSaveRawXMLLogSkipsEmptyBuffer(t *testing.T) {
 
 func TestSaveRawXMLLogDoesNotOverwriteSameSecond(t *testing.T) {
 	directory := t.TempDir()
-	timestamp := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	startedAt := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	endedAt := startedAt.Add(time.Second)
 
-	firstPath, err := saveRawXMLLog(directory, timestamp, bytes.NewBufferString("first command"))
+	firstPath, err := saveRawXMLLog(directory, startedAt, endedAt, bytes.NewBufferString("first command"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondPath, err := saveRawXMLLog(directory, timestamp, bytes.NewBufferString("second command"))
+	secondPath, err := saveRawXMLLog(directory, startedAt, endedAt, bytes.NewBufferString("second command"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,17 +120,32 @@ func TestSaveRawXMLLogDoesNotOverwriteSameSecond(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(firstData) != "first command" {
+	if !strings.HasPrefix(string(firstData), "first command\n\nStart Time:") {
 		t.Fatalf("first log was overwritten: %q", firstData)
+	}
+}
+
+func TestRawXMLLogTimingFooterIsAtEnd(t *testing.T) {
+	location := time.FixedZone("WIB", 7*60*60)
+	startedAt := time.Date(2026, time.August, 6, 17, 4, 5, 250*1e6, location)
+	endedAt := startedAt.Add(2*time.Minute + 750*time.Millisecond)
+
+	content := rawXMLLogContent(bytes.NewBufferString("<epp/>"), startedAt, endedAt)
+	wantSuffix := "Start Time: 2026-08-06 17:04:05.250 WIB\n" +
+		"End Time: 2026-08-06 17:06:06.000 WIB\n" +
+		"Duration Process: 2m0.75s\n"
+	if !strings.HasSuffix(string(content), wantSuffix) {
+		t.Fatalf("rawXMLLogContent() = %q, want suffix %q", content, wantSuffix)
 	}
 }
 
 func TestPrintAndSaveRawXMLReportsPath(t *testing.T) {
 	directory := t.TempDir()
-	timestamp := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	startedAt := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	endedAt := startedAt.Add(time.Second)
 	var output bytes.Buffer
 
-	printAndSaveRawXML(&output, directory, timestamp, bytes.NewBufferString("<epp/>\n"))
+	printAndSaveRawXML(&output, directory, startedAt, endedAt, bytes.NewBufferString("<epp/>\n"))
 
 	if !strings.Contains(output.String(), "Raw XML log saved to "+filepath.Join(directory, "output-20260806-170405.log")) {
 		t.Fatalf("printAndSaveRawXML() output = %q", output.String())
