@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -21,6 +22,25 @@ func TestSSLCheckLogFilename(t *testing.T) {
 
 	if got, want := sslCheckLogFilename(timestamp), "test-ssl-20260806-170405.log"; got != want {
 		t.Fatalf("sslCheckLogFilename() = %q, want %q", got, want)
+	}
+}
+
+func TestLookupPublicIPAddress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if got, want := request.Method, http.MethodGet; got != want {
+			t.Errorf("request method = %q, want %q", got, want)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(response, `{"status":"ok","data":{"ip":"203.0.113.10"}}`)
+	}))
+	defer server.Close()
+
+	got, err := lookupPublicIPAddress(context.Background(), server.Client(), server.URL)
+	if err != nil {
+		t.Fatalf("lookupPublicIPAddress() error = %v", err)
+	}
+	if want := "203.0.113.10"; got != want {
+		t.Fatalf("lookupPublicIPAddress() = %q, want %q", got, want)
 	}
 }
 
@@ -53,7 +73,10 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	defer cancel()
 	dialer := &net.Dialer{}
 
-	result := performSSLCheck(ctx, "default", cfg, startedAt, dialer.DialContext)
+	lookupPublicIP := func(context.Context) (string, error) {
+		return "203.0.113.10", nil
+	}
+	result := performSSLCheck(ctx, "default", cfg, startedAt, dialer.DialContext, lookupPublicIP)
 
 	if result.Err != nil {
 		t.Fatalf("performSSLCheck() error = %v", result.Err)
@@ -73,10 +96,15 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	if !result.EndedAt.After(result.StartedAt) {
 		t.Fatalf("end time %v is not after start time %v", result.EndedAt, result.StartedAt)
 	}
+	if got, want := result.PublicIPAddress, "203.0.113.10"; got != want {
+		t.Fatalf("public IP address = %q, want %q", got, want)
+	}
 
 	logContent := string(formatSSLCheckLog(result))
 	for _, expected := range []string{
-		"TCP Connection: SUCCESS",
+		"EPP-ID TCP Connection Test",
+		"My IP Address: " + result.PublicIPAddress,
+		"EPP-ID SSL/TLS Connection Test",
 		"TLS Handshake: SUCCESS",
 		"Negotiated TLS Version: TLS 1.2",
 		"Server Certificates: 1",
@@ -87,17 +115,29 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 			t.Fatalf("SSL log does not contain %q:\n%s", expected, logContent)
 		}
 	}
+	if tcpIndex, tlsIndex := strings.Index(logContent, "EPP-ID TCP Connection Test"), strings.Index(logContent, "EPP-ID SSL/TLS Connection Test"); tcpIndex < 0 || tlsIndex <= tcpIndex {
+		t.Fatalf("TCP and TLS sections are out of order:\n%s", logContent)
+	}
+	if got, want := strings.Count(logContent, "Result: SUCCESS"), 2; got != want {
+		t.Fatalf("successful result count = %d, want %d:\n%s", got, want, logContent)
+	}
 }
 
-func TestPerformSSLCheckRecordsConfigurationFailureWithoutDialing(t *testing.T) {
+func TestPerformSSLCheckRunsTCPBeforeTLSConfiguration(t *testing.T) {
 	cfg := &Config{Addr: "epp.registry.example.id:700", TLS: true}
 	dialCalled := false
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
 	dial := func(context.Context, string, string) (net.Conn, error) {
 		dialCalled = true
-		return nil, nil
+		return clientConn, nil
+	}
+	lookupErr := errors.New("RIPEstat unavailable")
+	lookupPublicIP := func(context.Context) (string, error) {
+		return "", lookupErr
 	}
 
-	result := performSSLCheck(context.Background(), "default", cfg, time.Now(), dial)
+	result := performSSLCheck(context.Background(), "default", cfg, time.Now(), dial, lookupPublicIP)
 
 	if result.Err == nil || !strings.Contains(result.Err.Error(), "cert not found") {
 		t.Fatalf("performSSLCheck() error = %v", result.Err)
@@ -105,11 +145,52 @@ func TestPerformSSLCheckRecordsConfigurationFailureWithoutDialing(t *testing.T) 
 	if result.FailureStage != "TLS configuration" {
 		t.Fatalf("failure stage = %q, want TLS configuration", result.FailureStage)
 	}
-	if result.TCPAttempted || dialCalled {
-		t.Fatal("performSSLCheck() dialed despite invalid TLS configuration")
+	if !result.TCPAttempted || !result.TCPConnected || !dialCalled {
+		t.Fatal("performSSLCheck() did not complete TCP before checking TLS configuration")
 	}
-	if got := string(formatSSLCheckLog(result)); !strings.Contains(got, "TCP Connection: NOT ATTEMPTED") || !strings.Contains(got, "Result: FAILED") {
+	if result.TLSHandshakeAttempted {
+		t.Fatal("performSSLCheck() attempted TLS with an invalid configuration")
+	}
+	if !errors.Is(result.PublicIPLookupErr, lookupErr) {
+		t.Fatalf("public IP lookup error = %v, want %v", result.PublicIPLookupErr, lookupErr)
+	}
+	if got := string(formatSSLCheckLog(result)); !strings.Contains(got, "EPP-ID TCP Connection Test") || !strings.Contains(got, "EPP-ID SSL/TLS Connection Test") || !strings.Contains(got, "TLS Handshake: NOT ATTEMPTED") || !strings.Contains(got, "Public IP Lookup Error: RIPEstat unavailable") {
 		t.Fatalf("failure log = %q", got)
+	}
+}
+
+func TestFormatSSLCheckLogStopsAfterTCPFailure(t *testing.T) {
+	startedAt := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	cfg := &Config{
+		Addr: "epp.registry.example.id:700",
+		TLS:  true,
+		Cert: "/home/user/.epp/ssl/certificate.pem",
+		Key:  "/home/user/.epp/ssl/certificate.key",
+	}
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("connection refused")
+	}
+	lookupPublicIP := func(context.Context) (string, error) {
+		return "203.0.113.10", nil
+	}
+
+	result := performSSLCheck(context.Background(), "default", cfg, startedAt, dial, lookupPublicIP)
+	logContent := string(formatSSLCheckLog(result))
+
+	wantPrefix := "EPP-ID TCP Connection Test\n" +
+		"================================\n" +
+		"Profile: default\n" +
+		"Address: epp.registry.example.id:700\n" +
+		"My IP Address: 203.0.113.10\n\n" +
+		"Result: FAILED\n"
+	if !strings.HasPrefix(logContent, wantPrefix) {
+		t.Fatalf("TCP failure log = %q, want prefix %q", logContent, wantPrefix)
+	}
+	if strings.Contains(logContent, "EPP-ID SSL/TLS Connection Test") {
+		t.Fatalf("TCP failure log unexpectedly contains an SSL section:\n%s", logContent)
+	}
+	if !strings.Contains(logContent, "Failure Stage: TCP connection") || !strings.Contains(logContent, "Error: connection refused") {
+		t.Fatalf("TCP failure log is missing diagnostics:\n%s", logContent)
 	}
 }
 

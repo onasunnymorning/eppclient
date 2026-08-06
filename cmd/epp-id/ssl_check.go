@@ -6,9 +6,12 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,15 +19,21 @@ import (
 )
 
 const (
-	sslCheckLogTimeFormat = "20060102-150405"
-	sslCheckTimeout       = 15 * time.Second
+	sslCheckLogTimeFormat  = "20060102-150405"
+	sslCheckTimeout        = 20 * time.Second
+	publicIPLookupTimeout  = 5 * time.Second
+	publicIPResponseLimit  = 1 << 20
+	publicIPLookupEndpoint = "https://stat.ripe.net/data/whats-my-ip/data.json"
 )
 
 type dialContextFunc func(context.Context, string, string) (net.Conn, error)
+type publicIPLookupFunc func(context.Context) (string, error)
 
 type sslCheckResult struct {
 	Profile                string
 	Address                string
+	PublicIPAddress        string
+	PublicIPLookupErr      error
 	ServerName             string
 	ClientCertificate      string
 	ClientKey              string
@@ -67,12 +76,16 @@ func runSSLCheck(profile, directory string, startedAt time.Time) (string, error)
 	defer cancel()
 
 	dialer := &net.Dialer{}
-	result := performSSLCheck(ctx, profile, cfg, startedAt, dialer.DialContext)
+	httpClient := &http.Client{Timeout: publicIPLookupTimeout}
+	lookupPublicIP := func(ctx context.Context) (string, error) {
+		return lookupPublicIPAddress(ctx, httpClient, publicIPLookupEndpoint)
+	}
+	result := performSSLCheck(ctx, profile, cfg, startedAt, dialer.DialContext, lookupPublicIP)
 	path, logErr := saveSSLCheckLog(directory, result)
 	return path, errors.Join(result.Err, logErr)
 }
 
-func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt time.Time, dial dialContextFunc) (result sslCheckResult) {
+func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt time.Time, dial dialContextFunc, lookupPublicIP publicIPLookupFunc) (result sslCheckResult) {
 	result = sslCheckResult{
 		Profile:               profile,
 		Address:               cfg.Addr,
@@ -86,13 +99,9 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 		result.EndedAt = time.Now()
 	}()
 
-	tlsConfig, serverName, err := sslCheckTLSConfig(cfg)
-	result.ServerName = serverName
-	if err != nil {
-		result.FailureStage = "TLS configuration"
-		result.Err = err
-		return result
-	}
+	lookupCtx, cancelLookup := context.WithTimeout(ctx, publicIPLookupTimeout)
+	result.PublicIPAddress, result.PublicIPLookupErr = lookupPublicIP(lookupCtx)
+	cancelLookup()
 
 	result.TCPAttempted = true
 	conn, err := dial(ctx, "tcp", cfg.Addr)
@@ -103,6 +112,14 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 	}
 	result.TCPConnected = true
 	defer conn.Close()
+
+	tlsConfig, serverName, err := sslCheckTLSConfig(cfg)
+	result.ServerName = serverName
+	if err != nil {
+		result.FailureStage = "TLS configuration"
+		result.Err = err
+		return result
+	}
 
 	tlsConn := tls.Client(conn, tlsConfig)
 	result.TLSHandshakeAttempted = true
@@ -117,6 +134,39 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 
 	result.TLSHandshakeSuccessful = true
 	return result
+}
+
+func lookupPublicIPAddress(ctx context.Context, client *http.Client, endpoint string) (string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", fmt.Errorf("create RIPEstat public IP request: %w", err)
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("request public IP from RIPEstat: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("RIPEstat public IP request returned HTTP %s", response.Status)
+	}
+
+	var payload struct {
+		Data struct {
+			IP string `json:"ip"`
+		} `json:"data"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, publicIPResponseLimit))
+	if err := decoder.Decode(&payload); err != nil {
+		return "", fmt.Errorf("decode RIPEstat public IP response: %w", err)
+	}
+
+	ipAddress := strings.TrimSpace(payload.Data.IP)
+	if net.ParseIP(ipAddress) == nil {
+		return "", fmt.Errorf("RIPEstat returned an invalid public IP address")
+	}
+	return ipAddress, nil
 }
 
 func sslCheckTLSConfig(cfg *Config) (*tls.Config, string, error) {
@@ -190,6 +240,25 @@ func saveSSLCheckLog(directory string, result sslCheckResult) (string, error) {
 
 func formatSSLCheckLog(result sslCheckResult) []byte {
 	var output bytes.Buffer
+	fmt.Fprintln(&output, "EPP-ID TCP Connection Test")
+	fmt.Fprintln(&output, "================================")
+	fmt.Fprintf(&output, "Profile: %s\n", result.Profile)
+	fmt.Fprintf(&output, "Address: %s\n", valueOrUnavailable(result.Address))
+	fmt.Fprintf(&output, "My IP Address: %s\n", valueOrUnavailable(result.PublicIPAddress))
+	if result.PublicIPLookupErr != nil {
+		fmt.Fprintf(&output, "Public IP Lookup Error: %v\n", result.PublicIPLookupErr)
+	}
+	fmt.Fprintln(&output)
+	if result.TCPConnected {
+		fmt.Fprintln(&output, "Result: SUCCESS")
+	} else {
+		fmt.Fprintln(&output, "Result: FAILED")
+		writeSSLCheckFailure(&output, result)
+		writeProcessTiming(&output, result)
+		return output.Bytes()
+	}
+
+	fmt.Fprintln(&output)
 	fmt.Fprintln(&output, "EPP-ID SSL/TLS Connection Test")
 	fmt.Fprintln(&output, "================================")
 	fmt.Fprintf(&output, "Profile: %s\n", result.Profile)
@@ -205,7 +274,6 @@ func formatSSLCheckLog(result sslCheckResult) []byte {
 		fmt.Fprintf(&output, "CA Certificate: %s\n", result.CACertificate)
 	}
 	fmt.Fprintln(&output)
-	fmt.Fprintf(&output, "TCP Connection: %s\n", connectionStatus(result.TCPAttempted, result.TCPConnected))
 	fmt.Fprintf(&output, "TLS Handshake: %s\n", connectionStatus(result.TLSHandshakeAttempted, result.TLSHandshakeSuccessful))
 
 	if state := result.ConnectionState; state != nil {
@@ -231,18 +299,30 @@ func formatSSLCheckLog(result sslCheckResult) []byte {
 	}
 
 	fmt.Fprintln(&output)
-	if result.Err == nil {
+	if result.TLSHandshakeSuccessful {
 		fmt.Fprintln(&output, "Result: SUCCESS")
 	} else {
 		fmt.Fprintln(&output, "Result: FAILED")
-		fmt.Fprintf(&output, "Failure Stage: %s\n", result.FailureStage)
-		fmt.Fprintf(&output, "Error: %v\n", result.Err)
+		writeSSLCheckFailure(&output, result)
 	}
-	fmt.Fprintln(&output)
-	fmt.Fprintf(&output, "Start Time: %s\n", result.StartedAt.Format(processTimeFormat))
-	fmt.Fprintf(&output, "End Time: %s\n", result.EndedAt.Format(processTimeFormat))
-	fmt.Fprintf(&output, "Duration Process: %s\n", result.EndedAt.Sub(result.StartedAt).Round(time.Millisecond))
+	writeProcessTiming(&output, result)
 	return output.Bytes()
+}
+
+func writeSSLCheckFailure(output *bytes.Buffer, result sslCheckResult) {
+	if result.FailureStage != "" {
+		fmt.Fprintf(output, "Failure Stage: %s\n", result.FailureStage)
+	}
+	if result.Err != nil {
+		fmt.Fprintf(output, "Error: %v\n", result.Err)
+	}
+}
+
+func writeProcessTiming(output *bytes.Buffer, result sslCheckResult) {
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "Start Time: %s\n", result.StartedAt.Format(processTimeFormat))
+	fmt.Fprintf(output, "End Time: %s\n", result.EndedAt.Format(processTimeFormat))
+	fmt.Fprintf(output, "Duration Process: %s\n", result.EndedAt.Sub(result.StartedAt).Round(time.Millisecond))
 }
 
 func connectionStatus(attempted, successful bool) string {
