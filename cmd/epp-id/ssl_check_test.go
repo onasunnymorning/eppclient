@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -73,10 +74,15 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	if !result.EndedAt.After(result.StartedAt) {
 		t.Fatalf("end time %v is not after start time %v", result.EndedAt, result.StartedAt)
 	}
+	if result.LocalIPAddress == "" {
+		t.Fatal("performSSLCheck() did not record the local IP address")
+	}
 
 	logContent := string(formatSSLCheckLog(result))
 	for _, expected := range []string{
-		"TCP Connection: SUCCESS",
+		"EPP-ID TCP Connection Test",
+		"My IP Address: " + result.LocalIPAddress,
+		"EPP-ID SSL/TLS Connection Test",
 		"TLS Handshake: SUCCESS",
 		"Negotiated TLS Version: TLS 1.2",
 		"Server Certificates: 1",
@@ -87,14 +93,22 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 			t.Fatalf("SSL log does not contain %q:\n%s", expected, logContent)
 		}
 	}
+	if tcpIndex, tlsIndex := strings.Index(logContent, "EPP-ID TCP Connection Test"), strings.Index(logContent, "EPP-ID SSL/TLS Connection Test"); tcpIndex < 0 || tlsIndex <= tcpIndex {
+		t.Fatalf("TCP and TLS sections are out of order:\n%s", logContent)
+	}
+	if got, want := strings.Count(logContent, "Result: SUCCESS"), 2; got != want {
+		t.Fatalf("successful result count = %d, want %d:\n%s", got, want, logContent)
+	}
 }
 
-func TestPerformSSLCheckRecordsConfigurationFailureWithoutDialing(t *testing.T) {
+func TestPerformSSLCheckRunsTCPBeforeTLSConfiguration(t *testing.T) {
 	cfg := &Config{Addr: "epp.registry.example.id:700", TLS: true}
 	dialCalled := false
+	clientConn, serverConn := net.Pipe()
+	defer serverConn.Close()
 	dial := func(context.Context, string, string) (net.Conn, error) {
 		dialCalled = true
-		return nil, nil
+		return clientConn, nil
 	}
 
 	result := performSSLCheck(context.Background(), "default", cfg, time.Now(), dial)
@@ -105,11 +119,46 @@ func TestPerformSSLCheckRecordsConfigurationFailureWithoutDialing(t *testing.T) 
 	if result.FailureStage != "TLS configuration" {
 		t.Fatalf("failure stage = %q, want TLS configuration", result.FailureStage)
 	}
-	if result.TCPAttempted || dialCalled {
-		t.Fatal("performSSLCheck() dialed despite invalid TLS configuration")
+	if !result.TCPAttempted || !result.TCPConnected || !dialCalled {
+		t.Fatal("performSSLCheck() did not complete TCP before checking TLS configuration")
 	}
-	if got := string(formatSSLCheckLog(result)); !strings.Contains(got, "TCP Connection: NOT ATTEMPTED") || !strings.Contains(got, "Result: FAILED") {
+	if result.TLSHandshakeAttempted {
+		t.Fatal("performSSLCheck() attempted TLS with an invalid configuration")
+	}
+	if got := string(formatSSLCheckLog(result)); !strings.Contains(got, "EPP-ID TCP Connection Test") || !strings.Contains(got, "EPP-ID SSL/TLS Connection Test") || !strings.Contains(got, "TLS Handshake: NOT ATTEMPTED") {
 		t.Fatalf("failure log = %q", got)
+	}
+}
+
+func TestFormatSSLCheckLogStopsAfterTCPFailure(t *testing.T) {
+	startedAt := time.Date(2026, time.August, 6, 17, 4, 5, 0, time.UTC)
+	cfg := &Config{
+		Addr: "epp.registry.example.id:700",
+		TLS:  true,
+		Cert: "/home/user/.epp/ssl/certificate.pem",
+		Key:  "/home/user/.epp/ssl/certificate.key",
+	}
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("connection refused")
+	}
+
+	result := performSSLCheck(context.Background(), "default", cfg, startedAt, dial)
+	logContent := string(formatSSLCheckLog(result))
+
+	wantPrefix := "EPP-ID TCP Connection Test\n" +
+		"================================\n" +
+		"Profile: default\n" +
+		"Address: epp.registry.example.id:700\n" +
+		"My IP Address: not available\n\n" +
+		"Result: FAILED\n"
+	if !strings.HasPrefix(logContent, wantPrefix) {
+		t.Fatalf("TCP failure log = %q, want prefix %q", logContent, wantPrefix)
+	}
+	if strings.Contains(logContent, "EPP-ID SSL/TLS Connection Test") {
+		t.Fatalf("TCP failure log unexpectedly contains an SSL section:\n%s", logContent)
+	}
+	if !strings.Contains(logContent, "Failure Stage: TCP connection") || !strings.Contains(logContent, "Error: connection refused") {
+		t.Fatalf("TCP failure log is missing diagnostics:\n%s", logContent)
 	}
 }
 

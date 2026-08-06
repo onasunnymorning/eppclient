@@ -114,7 +114,7 @@ Every attempt, including a failed connection or handshake, creates a diagnostic 
 test-ssl-YYYYMMDD-hhmmss.log
 ```
 
-The log records TCP and TLS status, the negotiated cipher suite, server certificate details, errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
+The log starts with a separate TCP connection test and records the local source IP address selected by the operating system. The TLS test runs only when the TCP connection succeeds; a failed TCP result ends the log without an SSL/TLS section. Successful TCP connections continue with the negotiated cipher suite, server certificate details, TLS errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
 
 #### Domain Operations
 

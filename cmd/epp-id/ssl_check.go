@@ -25,6 +25,7 @@ type dialContextFunc func(context.Context, string, string) (net.Conn, error)
 type sslCheckResult struct {
 	Profile                string
 	Address                string
+	LocalIPAddress         string
 	ServerName             string
 	ClientCertificate      string
 	ClientKey              string
@@ -86,14 +87,6 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 		result.EndedAt = time.Now()
 	}()
 
-	tlsConfig, serverName, err := sslCheckTLSConfig(cfg)
-	result.ServerName = serverName
-	if err != nil {
-		result.FailureStage = "TLS configuration"
-		result.Err = err
-		return result
-	}
-
 	result.TCPAttempted = true
 	conn, err := dial(ctx, "tcp", cfg.Addr)
 	if err != nil {
@@ -102,7 +95,16 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 		return result
 	}
 	result.TCPConnected = true
+	result.LocalIPAddress = localIPAddress(conn.LocalAddr())
 	defer conn.Close()
+
+	tlsConfig, serverName, err := sslCheckTLSConfig(cfg)
+	result.ServerName = serverName
+	if err != nil {
+		result.FailureStage = "TLS configuration"
+		result.Err = err
+		return result
+	}
 
 	tlsConn := tls.Client(conn, tlsConfig)
 	result.TLSHandshakeAttempted = true
@@ -190,6 +192,22 @@ func saveSSLCheckLog(directory string, result sslCheckResult) (string, error) {
 
 func formatSSLCheckLog(result sslCheckResult) []byte {
 	var output bytes.Buffer
+	fmt.Fprintln(&output, "EPP-ID TCP Connection Test")
+	fmt.Fprintln(&output, "================================")
+	fmt.Fprintf(&output, "Profile: %s\n", result.Profile)
+	fmt.Fprintf(&output, "Address: %s\n", valueOrUnavailable(result.Address))
+	fmt.Fprintf(&output, "My IP Address: %s\n", valueOrUnavailable(result.LocalIPAddress))
+	fmt.Fprintln(&output)
+	if result.TCPConnected {
+		fmt.Fprintln(&output, "Result: SUCCESS")
+	} else {
+		fmt.Fprintln(&output, "Result: FAILED")
+		writeSSLCheckFailure(&output, result)
+		writeProcessTiming(&output, result)
+		return output.Bytes()
+	}
+
+	fmt.Fprintln(&output)
 	fmt.Fprintln(&output, "EPP-ID SSL/TLS Connection Test")
 	fmt.Fprintln(&output, "================================")
 	fmt.Fprintf(&output, "Profile: %s\n", result.Profile)
@@ -205,7 +223,6 @@ func formatSSLCheckLog(result sslCheckResult) []byte {
 		fmt.Fprintf(&output, "CA Certificate: %s\n", result.CACertificate)
 	}
 	fmt.Fprintln(&output)
-	fmt.Fprintf(&output, "TCP Connection: %s\n", connectionStatus(result.TCPAttempted, result.TCPConnected))
 	fmt.Fprintf(&output, "TLS Handshake: %s\n", connectionStatus(result.TLSHandshakeAttempted, result.TLSHandshakeSuccessful))
 
 	if state := result.ConnectionState; state != nil {
@@ -231,18 +248,30 @@ func formatSSLCheckLog(result sslCheckResult) []byte {
 	}
 
 	fmt.Fprintln(&output)
-	if result.Err == nil {
+	if result.TLSHandshakeSuccessful {
 		fmt.Fprintln(&output, "Result: SUCCESS")
 	} else {
 		fmt.Fprintln(&output, "Result: FAILED")
-		fmt.Fprintf(&output, "Failure Stage: %s\n", result.FailureStage)
-		fmt.Fprintf(&output, "Error: %v\n", result.Err)
+		writeSSLCheckFailure(&output, result)
 	}
-	fmt.Fprintln(&output)
-	fmt.Fprintf(&output, "Start Time: %s\n", result.StartedAt.Format(processTimeFormat))
-	fmt.Fprintf(&output, "End Time: %s\n", result.EndedAt.Format(processTimeFormat))
-	fmt.Fprintf(&output, "Duration Process: %s\n", result.EndedAt.Sub(result.StartedAt).Round(time.Millisecond))
+	writeProcessTiming(&output, result)
 	return output.Bytes()
+}
+
+func writeSSLCheckFailure(output *bytes.Buffer, result sslCheckResult) {
+	if result.FailureStage != "" {
+		fmt.Fprintf(output, "Failure Stage: %s\n", result.FailureStage)
+	}
+	if result.Err != nil {
+		fmt.Fprintf(output, "Error: %v\n", result.Err)
+	}
+}
+
+func writeProcessTiming(output *bytes.Buffer, result sslCheckResult) {
+	fmt.Fprintln(output)
+	fmt.Fprintf(output, "Start Time: %s\n", result.StartedAt.Format(processTimeFormat))
+	fmt.Fprintf(output, "End Time: %s\n", result.EndedAt.Format(processTimeFormat))
+	fmt.Fprintf(output, "Duration Process: %s\n", result.EndedAt.Sub(result.StartedAt).Round(time.Millisecond))
 }
 
 func connectionStatus(attempted, successful bool) string {
@@ -275,4 +304,18 @@ func valueOrUnavailable(value string) string {
 		return "not available"
 	}
 	return value
+}
+
+func localIPAddress(address net.Addr) string {
+	if address == nil {
+		return ""
+	}
+	if tcpAddress, ok := address.(*net.TCPAddr); ok {
+		return tcpAddress.IP.String()
+	}
+	host, _, err := net.SplitHostPort(address.String())
+	if err != nil {
+		return ""
+	}
+	return host
 }
