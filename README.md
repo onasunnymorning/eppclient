@@ -34,6 +34,32 @@ chmod 600 ~/.epp/credentials
 epp-id check example.id
 ```
 
+### Sample Configuration
+
+The repository includes a safe sample layout under `config/.epp`:
+
+```text
+config/
+└── .epp/
+    ├── credentials
+    ├── ssl/
+    │   ├── certificate.pem
+    │   └── certificate.key
+    └── xml/
+        ├── example.xml
+        └── example-batch.xml
+```
+
+Copy the sample into your home directory, replace all `CHANGE_ME` values and certificate files, update the absolute paths in `credentials`, and restrict access to the private key:
+
+```bash
+cp -R config/.epp "$HOME/"
+chmod 700 "$HOME/.epp" "$HOME/.epp/ssl"
+chmod 600 "$HOME/.epp/credentials" "$HOME/.epp/ssl/certificate.key"
+```
+
+The committed certificate chain and private key are public test fixtures. Never use them for a real EPP account or server. `certificate.pem` contains the sample client certificate, intermediate CA certificate, and root CA certificate in that order.
+
 ### Usage
 
 The basic syntax is `epp-id [options] <command> [arguments]`.

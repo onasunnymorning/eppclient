@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -34,6 +35,21 @@ func TestParseBatchCommandsPreservesRawXML(t *testing.T) {
 		if got := string(commands[index]); got != want[index] {
 			t.Errorf("command %d = %q, want %q", index+1, got, want[index])
 		}
+	}
+}
+
+func TestParseSampleBatchFile(t *testing.T) {
+	data, err := os.ReadFile("../../config/.epp/xml/example-batch.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commands, err := parseBatchCommands(data)
+	if err != nil {
+		t.Fatalf("parseBatchCommands() error = %v", err)
+	}
+	if got, want := len(commands), 6; got != want {
+		t.Fatalf("sample batch contains %d commands, want %d", got, want)
 	}
 }
 
