@@ -122,13 +122,15 @@ func main() {
 			// We can't easily distinguish our panic from others unless we use a custom type,
 			// but for this CLI it's probably fine to treat all panics as "something went wrong".
 			closeConnection(conn, automaticSession)
+			commandEndedAt := time.Now()
 			epp.DebugLogger = logger
-			printAndSaveRawXML(os.Stderr, ".", commandStartedAt, &logBuf)
+			printAndSaveRawXML(os.Stderr, ".", commandStartedAt, commandEndedAt, &logBuf)
 			os.Exit(1)
 		}
 		closeConnection(conn, automaticSession)
+		commandEndedAt := time.Now()
 		epp.DebugLogger = logger
-		printAndSaveRawXML(os.Stderr, ".", commandStartedAt, &logBuf)
+		printAndSaveRawXML(os.Stderr, ".", commandStartedAt, commandEndedAt, &logBuf)
 	}()
 
 	switch cmd {
