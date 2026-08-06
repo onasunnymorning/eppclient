@@ -114,7 +114,7 @@ Every attempt, including a failed connection or handshake, creates a diagnostic 
 test-ssl-YYYYMMDD-hhmmss.log
 ```
 
-The log starts with a separate TCP connection test and records the local source IP address selected by the operating system. The TLS test runs only when the TCP connection succeeds; a failed TCP result ends the log without an SSL/TLS section. Successful TCP connections continue with the negotiated cipher suite, server certificate details, TLS errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
+The log starts with a separate TCP connection test. `My IP Address` is the public outgoing IP reported by the RIPEstat `whats-my-ip` service at `https://stat.ripe.net/data/whats-my-ip/data.json`. If the public IP lookup fails, the error is recorded in the log and the TCP test still runs. The TLS test runs only when the TCP connection succeeds; a failed TCP result ends the log without an SSL/TLS section. Successful TCP connections continue with the negotiated cipher suite, server certificate details, TLS errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
 
 #### Domain Operations
 
