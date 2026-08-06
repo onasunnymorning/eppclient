@@ -102,18 +102,17 @@ func main() {
 		epp.DebugLogger = nil
 		if r := recover(); r != nil {
 			// If it was our fatal error, we already logged it.
-			// Just ensure we prompt and then exit 1.
+			// Just ensure we print the raw XML log and then exit 1.
 			// We can't easily distinguish our panic from others unless we use a custom type,
 			// but for this CLI it's probably fine to treat all panics as "something went wrong".
-			// But we DO want to run promptRawXML.
 			conn.Close()
 			epp.DebugLogger = logger
-			promptRawXML(&logBuf)
+			printRawXML(os.Stderr, &logBuf)
 			os.Exit(1)
 		}
 		conn.Close()
 		epp.DebugLogger = logger
-		promptRawXML(&logBuf)
+		printRawXML(os.Stderr, &logBuf)
 	}()
 
 	switch cmd {
