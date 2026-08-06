@@ -61,6 +61,37 @@ chmod 600 "$HOME/.epp/credentials" "$HOME/.epp/ssl/certificate.key"
 
 Replace all `CHANGE_ME` values, the certificate chain, and the private key before connecting to a real server. The embedded certificate chain and private key are public test fixtures. Never use them for a real EPP account or server. `certificate.pem` contains the sample client certificate, intermediate CA certificate, and root CA certificate in that order.
 
+### Update (Linux Server)
+
+Update the local source checkout, rebuild the binary, and install the new build over the existing executable:
+
+```bash
+cd /path/to/epp-id
+git checkout main
+git pull --ff-only origin main
+go test ./...
+go build -trimpath -o epp-id ./cmd/epp-id
+sudo install -m 0755 epp-id /usr/local/bin/epp-id
+epp-id version
+```
+
+Updating the binary does not overwrite files already stored under `~/.epp`.
+
+### Uninstall (Linux Server)
+
+Remove the installed executable and verify that it is no longer available:
+
+```bash
+sudo rm -f /usr/local/bin/epp-id
+command -v epp-id
+```
+
+The uninstall command intentionally preserves `~/.epp` because it may contain credentials, private keys, XML requests, and logs. To stop using that configuration without deleting it, move it to a backup location:
+
+```bash
+mv "$HOME/.epp" "$HOME/.epp.backup"
+```
+
 ### Usage
 
 The basic syntax is `epp-id [options] <command> [arguments]`.

@@ -21,8 +21,8 @@ import (
 var (
 	profileName string
 	verbose     bool
-	version     = "dev"
-	commit      = "none"
+	version     = "EPP-ID 20260806"
+	maintainer  = "freddy@pandi.id"
 )
 
 func main() {
@@ -261,7 +261,11 @@ func checkUsage(cmd string, args []string) {
 }
 
 func runVersion() {
-	fmt.Printf("version.BuildInfo{Version:%q, GitCommit:%q, GoVersion:%q}\n", version, commit, runtime.Version())
+	fmt.Println(formatBuildInfo(runtime.Version()))
+}
+
+func formatBuildInfo(goVersion string) string {
+	return fmt.Sprintf("version.BuildInfo{Version:%q, Maintainer:%q, GoVersion:%q}", version, maintainer, goVersion)
 }
 
 func connect(cfg *Config, automaticLogin bool) *epp.Conn {
