@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 	"net"
 
-	epp "github.com/onasunnymorning/eppclient"
+	epp "github.com/freddymanullang/epp-id"
 )
 
 // Config holds the EPP connection configuration.

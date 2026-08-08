@@ -3,4 +3,7 @@ sample.xml
 .aider*
 local/*
 /epp
+/epp-id
+output-*.log
+test-ssl-*.log
 .env*

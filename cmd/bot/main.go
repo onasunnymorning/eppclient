@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
-	epp "github.com/onasunnymorning/eppclient"
+	epp "github.com/freddymanullang/epp-id"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )

@@ -1,4 +1,4 @@
-module github.com/onasunnymorning/eppclient
+module github.com/freddymanullang/epp-id
 
 go 1.25
 

@@ -4,9 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
+
+	sampleconfig "github.com/freddymanullang/epp-id/config"
 )
 
 type Config struct {
@@ -19,18 +20,21 @@ type Config struct {
 	CACert   string
 }
 
-func loadConfig(profile string) (*Config, error) {
-	usr, err := user.Current()
+const (
+	userConfigDirectoryName = ".epp-id"
+	credentialsFilename     = "credentials"
+	userLogDirectoryName    = "log"
+)
+
+func loadConfig(profile string, requireUser bool) (*Config, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(usr.HomeDir, ".epp", "credentials")
+	path := filepath.Join(homeDir, userConfigDirectoryName, credentialsFilename)
 
 	f, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, initConfig(path)
-		}
 		return nil, fmt.Errorf("could not open credentials file: %w", err)
 	}
 	defer f.Close()
@@ -84,46 +88,36 @@ func loadConfig(profile string) (*Config, error) {
 		return nil, err
 	}
 
-	if cfg.User == "" {
+	if cfg.Addr == "" || strings.Contains(cfg.Addr, "CHANGE_ME") {
+		return nil, fmt.Errorf("address not found in profile %s", profile)
+	}
+
+	if requireUser && (cfg.User == "" || strings.Contains(cfg.User, "CHANGE_ME")) {
 		return nil, fmt.Errorf("user not found in profile %s", profile)
+	}
+	if requireUser && (cfg.Password == "" || strings.Contains(cfg.Password, "CHANGE_ME")) {
+		return nil, fmt.Errorf("password not found in profile %s", profile)
 	}
 
 	return cfg, nil
 }
 
-const configTemplate = `[default]
-# Your EPP server address (e.g., epp.example.com:700)
-addr = 
-user = 
-password = 
-tls = true
-
-# Optional: TLS client certificate and key
-# cert = 
-# key = 
-
-# Optional: Custom CA certificate for server validation
-# ca = 
-
-[ote]
-addr = epp.ote.registry.example:700
-user = 
-password = 
-tls = true
-`
-
-func initConfig(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("could not create configuration directory %s: %w", dir, err)
+func installUserConfig() (string, bool, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, err
 	}
 
-	if err := os.WriteFile(path, []byte(configTemplate), 0600); err != nil {
-		return fmt.Errorf("could not create credentials file %s: %w", path, err)
+	created, err := sampleconfig.Install(homeDir)
+	if err != nil {
+		return "", false, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Configuration file created at %s\n", path)
-	fmt.Fprintf(os.Stderr, "Please edit this file with your EPP credentials and run the command again.\n")
-	os.Exit(0)
-	return nil
+	configDir := filepath.Join(homeDir, userConfigDirectoryName)
+	credentialsCreated := sampleconfig.Created(created, filepath.ToSlash(filepath.Join(userConfigDirectoryName, credentialsFilename)))
+	return configDir, credentialsCreated, nil
+}
+
+func logDirectory(configDir string) string {
+	return filepath.Join(configDir, userLogDirectoryName)
 }
