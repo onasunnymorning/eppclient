@@ -31,6 +31,7 @@ The first execution automatically installs the embedded sample configuration und
 nano ~/.epp-id/credentials
 chmod 600 ~/.epp-id/credentials
 epp-id check ssl
+epp-id login
 epp-id check example.id
 ```
 
@@ -50,6 +51,7 @@ config/
     │   └── example-batch.xml
     └── log/
         ├── test-ssl-20260808-200937.log
+        ├── test-login-20260808-200945.log
         └── output-20260808-200952.log
 ```
 
@@ -106,7 +108,7 @@ mv "$HOME/.epp-id" "$HOME/.epp-id.backup"
 
 ### Usage
 
-The basic syntax is `epp-id [options] <command> [arguments]`.
+The basic syntax is `epp-id [options] <command> [arguments]`. Run `epp-id help` or `epp-id -h` to print the command list and global options.
 
 #### SSL Connection Test
 
@@ -126,6 +128,23 @@ Every attempt, including a failed connection or handshake, creates a diagnostic 
 ```
 
 The log starts with a separate TCP connection test. `IP EPP Server` records the resolved IP address actually used by the successful TCP connection. `IP EPP Client` is the public outgoing IP reported by the RIPEstat `whats-my-ip` service at `https://stat.ripe.net/data/whats-my-ip/data.json`. If the public IP lookup fails, the error is recorded in the log and the TCP test still runs. The TLS test runs only when the TCP connection succeeds; a failed TCP result ends the log without an SSL/TLS section. Successful TCP connections continue with the negotiated cipher suite, server certificate details, TLS errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
+
+#### EPP Login Test
+
+Test the username and password in the selected `~/.epp-id/credentials` profile by establishing the configured TCP/TLS connection, reading the EPP greeting, performing login, and then logging out:
+
+```bash
+epp-id login
+epp-id -profile sandbox login
+```
+
+Every attempt, including invalid credentials or a connection failure, creates a diagnostic log under `~/.epp-id/log`:
+
+```text
+~/.epp-id/log/test-login-YYYYMMDD-hhmmss.log
+```
+
+The log records the profile, EPP server, username, TLS setting, EPP result, and failure stage when applicable. It never records the password. Each file ends with `Start Time`, `End Time`, and `Duration Process`, uses owner-only permissions (`0600`), and is never overwritten; attempts started within the same second receive suffixes such as `-2`.
 
 #### Domain Operations
 

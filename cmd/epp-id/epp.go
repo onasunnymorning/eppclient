@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
@@ -36,6 +35,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] <command> [arguments]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nCommands:\n")
+		fmt.Fprintf(os.Stderr, "  login   Test EPP login credentials\n")
 		fmt.Fprintf(os.Stderr, "  check   Check domain availability or SSL connectivity\n")
 		fmt.Fprintf(os.Stderr, "  create  Create a domain\n")
 		fmt.Fprintf(os.Stderr, "  renew   Renew a domain\n")
@@ -46,6 +46,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  info    Get domain info\n")
 		fmt.Fprintf(os.Stderr, "  update  Update domain, contact or host\n")
 		fmt.Fprintf(os.Stderr, "  version Print version information\n")
+		fmt.Fprintf(os.Stderr, "  help    Print this help information\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
 	}
@@ -85,6 +86,10 @@ func main() {
 
 	// Check usage before connecting
 	checkUsage(cmd, subArgs)
+	if cmd == "help" {
+		flag.Usage()
+		return
+	}
 
 	configDir, configInitialized, err := installUserConfig()
 	if err != nil {
@@ -114,6 +119,18 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, "SSL connection test succeeded")
+		return
+	}
+	if cmd == "login" {
+		path, err := runLoginCheck(profileName, logDir, commandStartedAt)
+		if path != "" {
+			fmt.Fprintf(os.Stderr, "Login test log saved to %s\n", path)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "EPP login test failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "EPP login test succeeded")
 		return
 	}
 
@@ -178,6 +195,16 @@ func main() {
 
 func checkUsage(cmd string, args []string) {
 	switch cmd {
+	case "login":
+		if len(args) != 0 {
+			fmt.Fprintln(os.Stderr, "Usage: epp-id login")
+			os.Exit(1)
+		}
+	case "help":
+		if len(args) != 0 {
+			fmt.Fprintln(os.Stderr, "Usage: epp-id help")
+			os.Exit(1)
+		}
 	case "check":
 		if len(args) == 0 {
 			fmt.Fprintln(os.Stderr, "Usage: epp-id check ssl | epp-id check [-phase phase] <domain>...")
@@ -288,33 +315,8 @@ func formatBuildInfo(goVersion string) string {
 }
 
 func connect(cfg *Config, automaticLogin bool) *epp.Conn {
-	// Set up TLS
-	tlsCfg := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-
-	host, _, err := net.SplitHostPort(cfg.Addr)
-	if err != nil {
-		host = cfg.Addr
-	}
-	tlsCfg.ServerName = host
-
-	if cfg.CACert != "" {
-		ca, err := ioutil.ReadFile(cfg.CACert)
-		fatalif(err)
-		tlsCfg.RootCAs = x509.NewCertPool()
-		tlsCfg.RootCAs.AppendCertsFromPEM(ca)
-	}
-
-	if cfg.Cert != "" && cfg.Key != "" {
-		crt, err := tls.LoadX509KeyPair(cfg.Cert, cfg.Key)
-		fatalif(err)
-		tlsCfg.Certificates = append(tlsCfg.Certificates, crt)
-	}
-
-	if !cfg.TLS {
-		tlsCfg = nil
-	}
+	tlsCfg, err := eppClientTLSConfig(cfg)
+	fatalif(err)
 
 	var conn net.Conn
 	// TODO: Proxy support if needed from config
@@ -348,6 +350,40 @@ func connect(cfg *Config, automaticLogin bool) *epp.Conn {
 	}
 
 	return c
+}
+
+func eppClientTLSConfig(cfg *Config) (*tls.Config, error) {
+	if !cfg.TLS {
+		return nil, nil
+	}
+
+	host, _, err := net.SplitHostPort(cfg.Addr)
+	if err != nil {
+		host = cfg.Addr
+	}
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         host,
+	}
+
+	if cfg.CACert != "" {
+		ca, err := os.ReadFile(cfg.CACert)
+		if err != nil {
+			return nil, err
+		}
+		tlsCfg.RootCAs = x509.NewCertPool()
+		tlsCfg.RootCAs.AppendCertsFromPEM(ca)
+	}
+
+	if cfg.Cert != "" && cfg.Key != "" {
+		crt, err := tls.LoadX509KeyPair(cfg.Cert, cfg.Key)
+		if err != nil {
+			return nil, err
+		}
+		tlsCfg.Certificates = append(tlsCfg.Certificates, crt)
+	}
+
+	return tlsCfg, nil
 }
 
 func closeConnection(c *epp.Conn, automaticLogout bool) {
@@ -815,9 +851,9 @@ func runRaw(c *epp.Conn, args []string) {
 
 	filename := args[0]
 	if filename == "-" {
-		data, err = ioutil.ReadAll(os.Stdin)
+		data, err = io.ReadAll(os.Stdin)
 	} else {
-		data, err = ioutil.ReadFile(filename)
+		data, err = os.ReadFile(filename)
 	}
 	fatalif(err)
 
