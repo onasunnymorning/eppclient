@@ -18,8 +18,16 @@ func TestInstallUserConfigAndLoadCustomizedCredentials(t *testing.T) {
 	if !initialized {
 		t.Fatal("installUserConfig() did not initialize credentials")
 	}
-	if got, want := configDir, filepath.Join(homeDir, ".epp"); got != want {
+	if got, want := configDir, filepath.Join(homeDir, ".epp-id"); got != want {
 		t.Fatalf("config directory = %q, want %q", got, want)
+	}
+	if got, want := logDirectory(configDir), filepath.Join(homeDir, ".epp-id", "log"); got != want {
+		t.Fatalf("log directory = %q, want %q", got, want)
+	}
+	if info, err := os.Stat(logDirectory(configDir)); err != nil {
+		t.Fatalf("log directory was not created: %v", err)
+	} else if got, want := info.Mode().Perm(), os.FileMode(0700); got != want {
+		t.Fatalf("log directory permissions = %o, want %o", got, want)
 	}
 
 	if _, err := loadConfig("default", true); err == nil || !strings.Contains(err.Error(), "address not found") {
