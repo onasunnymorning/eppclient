@@ -20,7 +20,8 @@ import (
 
 const (
 	sslCheckLogTimeFormat  = "20060102-150405"
-	sslCheckTimeout        = 20 * time.Second
+	sslCheckTimeout        = 25 * time.Second
+	serverIPLookupTimeout  = 5 * time.Second
 	publicIPLookupTimeout  = 5 * time.Second
 	publicIPResponseLimit  = 1 << 20
 	publicIPLookupEndpoint = "https://stat.ripe.net/data/whats-my-ip/data.json"
@@ -28,10 +29,13 @@ const (
 
 type dialContextFunc func(context.Context, string, string) (net.Conn, error)
 type publicIPLookupFunc func(context.Context) (string, error)
+type serverIPLookupFunc func(context.Context, string) (string, error)
+type lookupIPFunc func(context.Context, string, string) ([]net.IP, error)
 
 type sslCheckResult struct {
 	Profile                string
 	Address                string
+	ServerIPAddress        string
 	PublicIPAddress        string
 	PublicIPLookupErr      error
 	ServerName             string
@@ -80,12 +84,15 @@ func runSSLCheck(profile, directory string, startedAt time.Time) (string, error)
 	lookupPublicIP := func(ctx context.Context) (string, error) {
 		return lookupPublicIPAddress(ctx, httpClient, publicIPLookupEndpoint)
 	}
-	result := performSSLCheck(ctx, profile, cfg, startedAt, dialer.DialContext, lookupPublicIP)
+	lookupServerIP := func(ctx context.Context, address string) (string, error) {
+		return lookupEPPServerIPAddress(ctx, address, net.DefaultResolver.LookupIP)
+	}
+	result := performSSLCheck(ctx, profile, cfg, startedAt, dialer.DialContext, lookupPublicIP, lookupServerIP)
 	path, logErr := saveSSLCheckLog(directory, result)
 	return path, errors.Join(result.Err, logErr)
 }
 
-func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt time.Time, dial dialContextFunc, lookupPublicIP publicIPLookupFunc) (result sslCheckResult) {
+func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt time.Time, dial dialContextFunc, lookupPublicIP publicIPLookupFunc, lookupServerIP serverIPLookupFunc) (result sslCheckResult) {
 	result = sslCheckResult{
 		Profile:               profile,
 		Address:               cfg.Addr,
@@ -102,6 +109,9 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 	lookupCtx, cancelLookup := context.WithTimeout(ctx, publicIPLookupTimeout)
 	result.PublicIPAddress, result.PublicIPLookupErr = lookupPublicIP(lookupCtx)
 	cancelLookup()
+	serverLookupCtx, cancelServerLookup := context.WithTimeout(ctx, serverIPLookupTimeout)
+	result.ServerIPAddress, _ = lookupServerIP(serverLookupCtx, cfg.Addr)
+	cancelServerLookup()
 
 	result.TCPAttempted = true
 	conn, err := dial(ctx, "tcp", cfg.Addr)
@@ -111,6 +121,9 @@ func performSSLCheck(ctx context.Context, profile string, cfg *Config, startedAt
 		return result
 	}
 	result.TCPConnected = true
+	if connectedServerIP := remoteIPAddress(conn.RemoteAddr()); connectedServerIP != "" {
+		result.ServerIPAddress = connectedServerIP
+	}
 	defer conn.Close()
 
 	tlsConfig, serverName, err := sslCheckTLSConfig(cfg)
@@ -167,6 +180,38 @@ func lookupPublicIPAddress(ctx context.Context, client *http.Client, endpoint st
 		return "", fmt.Errorf("RIPEstat returned an invalid public IP address")
 	}
 	return ipAddress, nil
+}
+
+func lookupEPPServerIPAddress(ctx context.Context, address string, lookupIP lookupIPFunc) (string, error) {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", fmt.Errorf("invalid EPP server address %q: %w", address, err)
+	}
+	if ipAddress := net.ParseIP(host); ipAddress != nil {
+		return ipAddress.String(), nil
+	}
+
+	ipAddresses, err := lookupIP(ctx, "ip4", host)
+	if err != nil {
+		return "", fmt.Errorf("resolve EPP server %q: %w", host, err)
+	}
+	resolved := make([]string, 0, len(ipAddresses))
+	seen := make(map[string]struct{}, len(ipAddresses))
+	for _, ipAddress := range ipAddresses {
+		value := ipAddress.String()
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		resolved = append(resolved, value)
+	}
+	if len(resolved) == 0 {
+		return "", fmt.Errorf("EPP server %q has no A record", host)
+	}
+	return strings.Join(resolved, ", "), nil
 }
 
 func sslCheckTLSConfig(cfg *Config) (*tls.Config, string, error) {
@@ -243,8 +288,9 @@ func formatSSLCheckLog(result sslCheckResult) []byte {
 	fmt.Fprintln(&output, "EPP-ID TCP Connection Test")
 	fmt.Fprintln(&output, "================================")
 	fmt.Fprintf(&output, "Profile: %s\n", result.Profile)
-	fmt.Fprintf(&output, "Address: %s\n", valueOrUnavailable(result.Address))
-	fmt.Fprintf(&output, "My IP Address: %s\n", valueOrUnavailable(result.PublicIPAddress))
+	fmt.Fprintf(&output, "EPP Server: %s\n", valueOrUnavailable(result.Address))
+	fmt.Fprintf(&output, "IP EPP Server: %s\n", valueOrUnavailable(result.ServerIPAddress))
+	fmt.Fprintf(&output, "IP EPP Client: %s\n", valueOrUnavailable(result.PublicIPAddress))
 	if result.PublicIPLookupErr != nil {
 		fmt.Fprintf(&output, "Public IP Lookup Error: %v\n", result.PublicIPLookupErr)
 	}
@@ -261,9 +307,6 @@ func formatSSLCheckLog(result sslCheckResult) []byte {
 	fmt.Fprintln(&output)
 	fmt.Fprintln(&output, "EPP-ID SSL/TLS Connection Test")
 	fmt.Fprintln(&output, "================================")
-	fmt.Fprintf(&output, "Profile: %s\n", result.Profile)
-	fmt.Fprintf(&output, "Address: %s\n", valueOrUnavailable(result.Address))
-	fmt.Fprintf(&output, "Server Name: %s\n", valueOrUnavailable(result.ServerName))
 	fmt.Fprintln(&output, "Requested TLS Version: TLS 1.2")
 	fmt.Fprintf(&output, "Credentials TLS Enabled: %t\n", result.CredentialsTLSEnabled)
 	fmt.Fprintf(&output, "Client Certificate: %s\n", valueOrUnavailable(result.ClientCertificate))
@@ -355,4 +398,18 @@ func valueOrUnavailable(value string) string {
 		return "not available"
 	}
 	return value
+}
+
+func remoteIPAddress(address net.Addr) string {
+	if address == nil {
+		return ""
+	}
+	if tcpAddress, ok := address.(*net.TCPAddr); ok {
+		return tcpAddress.IP.String()
+	}
+	host, _, err := net.SplitHostPort(address.String())
+	if err != nil {
+		return ""
+	}
+	return host
 }
