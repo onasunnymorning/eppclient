@@ -21,7 +21,7 @@ import (
 var (
 	profileName string
 	verbose     bool
-	version     = "EPP-ID 20260806"
+	version     = "EPP-ID 20260808"
 	maintainer  = "freddy@pandi.id"
 )
 
