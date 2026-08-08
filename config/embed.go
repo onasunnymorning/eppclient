@@ -12,14 +12,15 @@ import (
 )
 
 const (
-	embeddedRoot    = ".epp"
+	embeddedRoot    = ".epp-id"
 	homePlaceholder = "/home/CHANGE_ME_USERNAME"
+	logDirectory    = "log"
 )
 
-//go:embed all:.epp
+//go:embed all:.epp-id
 var sampleFiles embed.FS
 
-// Install writes missing sample files to .epp under homeDir. Existing files
+// Install writes missing sample files to .epp-id under homeDir. Existing files
 // are never overwritten. It returns the embedded paths that were created.
 func Install(homeDir string) ([]string, error) {
 	if homeDir == "" {
@@ -37,6 +38,9 @@ func Install(homeDir string) ([]string, error) {
 			if err := os.MkdirAll(destination, 0700); err != nil {
 				return fmt.Errorf("create configuration directory %s: %w", destination, err)
 			}
+			return nil
+		}
+		if entry.Name() == ".gitkeep" {
 			return nil
 		}
 
@@ -79,6 +83,14 @@ func Install(homeDir string) ([]string, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	logPath := filepath.Join(homeDir, embeddedRoot, logDirectory)
+	if err := os.MkdirAll(logPath, 0700); err != nil {
+		return nil, fmt.Errorf("create log directory %s: %w", logPath, err)
+	}
+	if err := os.Chmod(logPath, 0700); err != nil {
+		return nil, fmt.Errorf("secure log directory %s: %w", logPath, err)
 	}
 
 	return created, nil
