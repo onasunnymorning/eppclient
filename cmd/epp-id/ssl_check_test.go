@@ -44,6 +44,26 @@ func TestLookupPublicIPAddress(t *testing.T) {
 	}
 }
 
+func TestLookupEPPServerIPAddressReturnsARecords(t *testing.T) {
+	lookupIP := func(_ context.Context, network, host string) ([]net.IP, error) {
+		if got, want := network, "ip4"; got != want {
+			t.Fatalf("lookup network = %q, want %q", got, want)
+		}
+		if got, want := host, "epp-prod.pandi.id"; got != want {
+			t.Fatalf("lookup host = %q, want %q", got, want)
+		}
+		return []net.IP{net.ParseIP("192.0.2.10"), net.ParseIP("192.0.2.11")}, nil
+	}
+
+	got, err := lookupEPPServerIPAddress(context.Background(), "epp-prod.pandi.id:700", lookupIP)
+	if err != nil {
+		t.Fatalf("lookupEPPServerIPAddress() error = %v", err)
+	}
+	if want := "192.0.2.10, 192.0.2.11"; got != want {
+		t.Fatalf("lookupEPPServerIPAddress() = %q, want %q", got, want)
+	}
+}
+
 func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	server.Config.ErrorLog = log.New(io.Discard, "", 0)
@@ -76,7 +96,10 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	lookupPublicIP := func(context.Context) (string, error) {
 		return "203.0.113.10", nil
 	}
-	result := performSSLCheck(ctx, "default", cfg, startedAt, dialer.DialContext, lookupPublicIP)
+	lookupServerIP := func(context.Context, string) (string, error) {
+		return "192.0.2.10", nil
+	}
+	result := performSSLCheck(ctx, "default", cfg, startedAt, dialer.DialContext, lookupPublicIP, lookupServerIP)
 
 	if result.Err != nil {
 		t.Fatalf("performSSLCheck() error = %v", result.Err)
@@ -99,12 +122,18 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	if got, want := result.PublicIPAddress, "203.0.113.10"; got != want {
 		t.Fatalf("public IP address = %q, want %q", got, want)
 	}
+	if result.ServerIPAddress == "" {
+		t.Fatal("performSSLCheck() did not record the connected EPP server IP address")
+	}
 
 	logContent := string(formatSSLCheckLog(result))
 	for _, expected := range []string{
 		"EPP-ID TCP Connection Test",
-		"My IP Address: " + result.PublicIPAddress,
+		"EPP Server: " + result.Address,
+		"IP EPP Server: " + result.ServerIPAddress,
+		"IP EPP Client: " + result.PublicIPAddress,
 		"EPP-ID SSL/TLS Connection Test",
+		"EPP-ID SSL/TLS Connection Test\n================================\nRequested TLS Version: TLS 1.2",
 		"TLS Handshake: SUCCESS",
 		"Negotiated TLS Version: TLS 1.2",
 		"Server Certificates: 1",
@@ -121,6 +150,12 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	if got, want := strings.Count(logContent, "Result: SUCCESS"), 2; got != want {
 		t.Fatalf("successful result count = %d, want %d:\n%s", got, want, logContent)
 	}
+	tlsSection := logContent[strings.Index(logContent, "EPP-ID SSL/TLS Connection Test"):]
+	for _, removed := range []string{"Profile:", "Address:", "Server Name:"} {
+		if strings.Contains(tlsSection, removed) {
+			t.Fatalf("SSL/TLS section unexpectedly contains %q:\n%s", removed, tlsSection)
+		}
+	}
 }
 
 func TestPerformSSLCheckRunsTCPBeforeTLSConfiguration(t *testing.T) {
@@ -136,8 +171,11 @@ func TestPerformSSLCheckRunsTCPBeforeTLSConfiguration(t *testing.T) {
 	lookupPublicIP := func(context.Context) (string, error) {
 		return "", lookupErr
 	}
+	lookupServerIP := func(context.Context, string) (string, error) {
+		return "192.0.2.10", nil
+	}
 
-	result := performSSLCheck(context.Background(), "default", cfg, time.Now(), dial, lookupPublicIP)
+	result := performSSLCheck(context.Background(), "default", cfg, time.Now(), dial, lookupPublicIP, lookupServerIP)
 
 	if result.Err == nil || !strings.Contains(result.Err.Error(), "cert not found") {
 		t.Fatalf("performSSLCheck() error = %v", result.Err)
@@ -173,15 +211,19 @@ func TestFormatSSLCheckLogStopsAfterTCPFailure(t *testing.T) {
 	lookupPublicIP := func(context.Context) (string, error) {
 		return "203.0.113.10", nil
 	}
+	lookupServerIP := func(context.Context, string) (string, error) {
+		return "192.0.2.10", nil
+	}
 
-	result := performSSLCheck(context.Background(), "default", cfg, startedAt, dial, lookupPublicIP)
+	result := performSSLCheck(context.Background(), "default", cfg, startedAt, dial, lookupPublicIP, lookupServerIP)
 	logContent := string(formatSSLCheckLog(result))
 
 	wantPrefix := "EPP-ID TCP Connection Test\n" +
 		"================================\n" +
 		"Profile: default\n" +
-		"Address: epp.registry.example.id:700\n" +
-		"My IP Address: 203.0.113.10\n\n" +
+		"EPP Server: epp.registry.example.id:700\n" +
+		"IP EPP Server: 192.0.2.10\n" +
+		"IP EPP Client: 203.0.113.10\n\n" +
 		"Result: FAILED\n"
 	if !strings.HasPrefix(logContent, wantPrefix) {
 		t.Fatalf("TCP failure log = %q, want prefix %q", logContent, wantPrefix)
