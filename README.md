@@ -25,42 +25,53 @@ sudo install -m 0755 epp-id /usr/local/bin/epp-id
 epp-id version
 ```
 
-The first execution automatically installs the embedded sample configuration under `~/.epp`. After `epp-id version` finishes, edit the generated credentials and replace the sample certificates before connecting:
+The first execution automatically installs the embedded sample configuration under `~/.epp-id`. After `epp-id version` finishes, edit the generated credentials and replace the sample certificates before connecting:
 
 ```bash
-nano ~/.epp/credentials
-chmod 600 ~/.epp/credentials
+nano ~/.epp-id/credentials
+chmod 600 ~/.epp-id/credentials
 epp-id check ssl
 epp-id check example.id
 ```
 
 ### Sample Configuration
 
-The repository includes the following safe sample layout under `config/.epp`:
+The repository includes the following safe sample layout under `config/.epp-id`:
 
 ```text
 config/
-└── .epp/
+└── .epp-id/
     ├── credentials
     ├── ssl/
     │   ├── certificate.pem
     │   └── certificate.key
-    └── xml/
-        ├── example.xml
-        └── example-batch.xml
+    ├── xml/
+    │   ├── example.xml
+    │   └── example-batch.xml
+    └── log/
+        ├── test-ssl-20260808-200937.log
+        └── output-20260808-200952.log
 ```
 
-The `go build` command embeds this complete tree into the `epp-id` binary. On its first execution, the application creates any missing files under the current user's `~/.epp` directory and automatically updates certificate paths in `credentials` for that home directory. Existing files are never overwritten, so no manual copy is required.
+The `go build` command embeds the sample credentials, certificates, and XML files into the `epp-id` binary. On its first execution, the application creates any missing files under the current user's `~/.epp-id` directory, creates `~/.epp-id/log` with owner-only access, and automatically updates certificate paths in `credentials` for that home directory. Existing files are never overwritten, so no manual copy is required. The log files shown above are examples and are created only after commands run.
 
 After building, run the binary once and edit the installed files directly:
 
 ```bash
 ./epp-id version
-nano "$HOME/.epp/credentials"
-chmod 600 "$HOME/.epp/credentials" "$HOME/.epp/ssl/certificate.key"
+nano "$HOME/.epp-id/credentials"
+chmod 600 "$HOME/.epp-id/credentials" "$HOME/.epp-id/ssl/certificate.key"
 ```
 
 Replace all `CHANGE_ME` values, the certificate chain, and the private key before connecting to a real server. The embedded certificate chain and private key are public test fixtures. Never use them for a real EPP account or server. `certificate.pem` contains the sample client certificate, intermediate CA certificate, and root CA certificate in that order.
+
+If you are upgrading from a release that used `~/.epp`, move the old directory before running the new binary for the first time:
+
+```bash
+mv "$HOME/.epp" "$HOME/.epp-id"
+mkdir -p "$HOME/.epp-id/log"
+chmod 700 "$HOME/.epp-id" "$HOME/.epp-id/log"
+```
 
 ### Update (Linux Server)
 
@@ -76,7 +87,7 @@ sudo install -m 0755 epp-id /usr/local/bin/epp-id
 epp-id version
 ```
 
-Updating the binary does not overwrite files already stored under `~/.epp`.
+Updating the binary does not overwrite files already stored under `~/.epp-id`.
 
 ### Uninstall (Linux Server)
 
@@ -87,10 +98,10 @@ sudo rm -f /usr/local/bin/epp-id
 command -v epp-id
 ```
 
-The uninstall command intentionally preserves `~/.epp` because it may contain credentials, private keys, XML requests, and logs. To stop using that configuration without deleting it, move it to a backup location:
+The uninstall command intentionally preserves `~/.epp-id` because it may contain credentials, private keys, XML requests, and logs. To stop using that configuration without deleting it, move it to a backup location:
 
 ```bash
-mv "$HOME/.epp" "$HOME/.epp.backup"
+mv "$HOME/.epp-id" "$HOME/.epp-id.backup"
 ```
 
 ### Usage
@@ -99,7 +110,7 @@ The basic syntax is `epp-id [options] <command> [arguments]`.
 
 #### SSL Connection Test
 
-Test the TLS connection configured in the selected `~/.epp/credentials` profile without performing an EPP greeting or login:
+Test the TLS connection configured in the selected `~/.epp-id/credentials` profile without performing an EPP greeting or login:
 
 ```bash
 epp-id check ssl
@@ -108,10 +119,10 @@ epp-id -profile sandbox check ssl
 
 The test connects to `addr`, loads the client certificate from `cert`, loads its private key from `key`, and uses `ca` to verify the server certificate. When `ca` is not configured, the system certificate pool is used. The handshake is restricted to TLS 1.2, matching an OpenSSL test with `-tls1_2`.
 
-Every attempt, including a failed connection or handshake, creates a diagnostic log in the current directory:
+Every attempt, including a failed connection or handshake, creates a diagnostic log under `~/.epp-id/log`:
 
 ```text
-test-ssl-YYYYMMDD-hhmmss.log
+~/.epp-id/log/test-ssl-YYYYMMDD-hhmmss.log
 ```
 
 The log starts with a separate TCP connection test. `IP EPP Server` records the resolved IP address actually used by the successful TCP connection. `IP EPP Client` is the public outgoing IP reported by the RIPEstat `whats-my-ip` service at `https://stat.ripe.net/data/whats-my-ip/data.json`. If the public IP lookup fails, the error is recorded in the log and the TCP test still runs. The TLS test runs only when the TCP connection succeeds; a failed TCP result ends the log without an SSL/TLS section. Successful TCP connections continue with the negotiated cipher suite, server certificate details, TLS errors, and total processing duration. Existing logs are never overwritten; attempts started within the same second receive suffixes such as `-2`. Files are created with owner-only permissions (`0600`).
@@ -182,13 +193,13 @@ Because raw XML output is enabled, credentials contained in batch XML may be pri
 
 #### Raw XML Log Files
 
-Every command that produces raw XML also saves it in the current directory. Log filenames use the command start time in local time with a 24-hour clock:
+Every command that produces raw XML also saves it under `~/.epp-id/log`. Log filenames use the command start time in local time with a 24-hour clock:
 
 ```text
-output-YYYYMMDD-hhmmss.log
+~/.epp-id/log/output-YYYYMMDD-hhmmss.log
 ```
 
-For example, a command started on 6 August 2026 at 17:04:05 creates `output-20260806-170405.log`. If multiple commands start within the same second, later files receive a numeric suffix such as `output-20260806-170405-2.log` so existing logs are never overwritten.
+For example, a command started on 8 August 2026 at 20:09:52 creates `~/.epp-id/log/output-20260808-200952.log`. If multiple commands start within the same second, later files receive a numeric suffix such as `output-20260808-200952-2.log` so existing logs are never overwritten.
 
 Each log ends with the command start time, end time, and total processing duration:
 
