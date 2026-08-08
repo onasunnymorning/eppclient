@@ -84,8 +84,8 @@ func TestPerformSSLCheckWithTLS12AndClientCertificate(t *testing.T) {
 	cfg := &Config{
 		Addr:   server.Listener.Addr().String(),
 		TLS:    true,
-		Cert:   "../../config/.epp/ssl/certificate.pem",
-		Key:    "../../config/.epp/ssl/certificate.key",
+		Cert:   "../../config/.epp-id/ssl/certificate.pem",
+		Key:    "../../config/.epp-id/ssl/certificate.key",
 		CACert: caPath,
 	}
 	startedAt := time.Now()
@@ -202,8 +202,8 @@ func TestFormatSSLCheckLogStopsAfterTCPFailure(t *testing.T) {
 	cfg := &Config{
 		Addr: "epp.registry.example.id:700",
 		TLS:  true,
-		Cert: "/home/user/.epp/ssl/certificate.pem",
-		Key:  "/home/user/.epp/ssl/certificate.key",
+		Cert: "/home/user/.epp-id/ssl/certificate.pem",
+		Key:  "/home/user/.epp-id/ssl/certificate.key",
 	}
 	dial := func(context.Context, string, string) (net.Conn, error) {
 		return nil, errors.New("connection refused")
