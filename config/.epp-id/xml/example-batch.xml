@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<eppBatch>
+  <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+      <login>
+        <clID>CHANGE_ME_CLIENT_ID</clID>
+        <pw>CHANGE_ME_PASSWORD</pw>
+        <options>
+          <version>1.0</version>
+          <lang>en</lang>
+        </options>
+        <svcs>
+          <objURI>urn:ietf:params:xml:ns:domain-1.0</objURI>
+          <objURI>urn:ietf:params:xml:ns:contact-1.0</objURI>
+          <objURI>urn:ietf:params:xml:ns:host-1.0</objURI>
+        </svcs>
+      </login>
+      <clTRID>EPP-ID-SAMPLE-LOGIN-001</clTRID>
+    </command>
+  </epp>
+
+  <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+      <update>
+        <contact:update xmlns:contact="urn:ietf:params:xml:ns:contact-1.0">
+          <contact:id>CONTACT-001</contact:id>
+          <contact:chg>
+            <contact:postalInfo type="int">
+              <contact:name>Example User One</contact:name>
+              <contact:org>Example Organization</contact:org>
+              <contact:addr>
+                <contact:street>Jalan Contoh 1</contact:street>
+                <contact:city>Jakarta</contact:city>
+                <contact:sp>DKI Jakarta</contact:sp>
+                <contact:pc>10110</contact:pc>
+                <contact:cc>ID</contact:cc>
+              </contact:addr>
+            </contact:postalInfo>
+            <contact:voice>+62.211234567</contact:voice>
+            <contact:email>user1@example.id</contact:email>
+          </contact:chg>
+        </contact:update>
+      </update>
+      <clTRID>EPP-ID-SAMPLE-UPDATE-001</clTRID>
+    </command>
+  </epp>
+
+  <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+      <update>
+        <contact:update xmlns:contact="urn:ietf:params:xml:ns:contact-1.0">
+          <contact:id>CONTACT-002</contact:id>
+          <contact:chg>
+            <contact:postalInfo type="int">
+              <contact:name>Example User Two</contact:name>
+              <contact:org>Example Organization</contact:org>
+              <contact:addr>
+                <contact:street>Jalan Contoh 2</contact:street>
+                <contact:city>Bandung</contact:city>
+                <contact:sp>Jawa Barat</contact:sp>
+                <contact:pc>40111</contact:pc>
+                <contact:cc>ID</contact:cc>
+              </contact:addr>
+            </contact:postalInfo>
+            <contact:voice>+62.221234567</contact:voice>
+            <contact:email>user2@example.id</contact:email>
+          </contact:chg>
+        </contact:update>
+      </update>
+      <clTRID>EPP-ID-SAMPLE-UPDATE-002</clTRID>
+    </command>
+  </epp>
+
+  <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+      <update>
+        <contact:update xmlns:contact="urn:ietf:params:xml:ns:contact-1.0">
+          <contact:id>CONTACT-003</contact:id>
+          <contact:chg>
+            <contact:postalInfo type="int">
+              <contact:name>Example User Three</contact:name>
+              <contact:org>Example Organization</contact:org>
+              <contact:addr>
+                <contact:street>Jalan Contoh 3</contact:street>
+                <contact:city>Surabaya</contact:city>
+                <contact:sp>Jawa Timur</contact:sp>
+                <contact:pc>60111</contact:pc>
+                <contact:cc>ID</contact:cc>
+              </contact:addr>
+            </contact:postalInfo>
+            <contact:voice>+62.311234567</contact:voice>
+            <contact:email>user3@example.id</contact:email>
+          </contact:chg>
+        </contact:update>
+      </update>
+      <clTRID>EPP-ID-SAMPLE-UPDATE-003</clTRID>
+    </command>
+  </epp>
+
+  <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+      <update>
+        <contact:update xmlns:contact="urn:ietf:params:xml:ns:contact-1.0">
+          <contact:id>CONTACT-004</contact:id>
+          <contact:chg>
+            <contact:postalInfo type="int">
+              <contact:name>Example User Four</contact:name>
+              <contact:org>Example Organization</contact:org>
+              <contact:addr>
+                <contact:street>Jalan Contoh 4</contact:street>
+                <contact:city>Medan</contact:city>
+                <contact:sp>Sumatera Utara</contact:sp>
+                <contact:pc>20111</contact:pc>
+                <contact:cc>ID</contact:cc>
+              </contact:addr>
+            </contact:postalInfo>
+            <contact:voice>+62.611234567</contact:voice>
+            <contact:email>user4@example.id</contact:email>
+          </contact:chg>
+        </contact:update>
+      </update>
+      <clTRID>EPP-ID-SAMPLE-UPDATE-004</clTRID>
+    </command>
+  </epp>
+
+  <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+      <logout/>
+      <clTRID>EPP-ID-SAMPLE-LOGOUT-001</clTRID>
+    </command>
+  </epp>
+</eppBatch>
