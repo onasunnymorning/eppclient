@@ -39,7 +39,7 @@ func TestParseBatchCommandsPreservesRawXML(t *testing.T) {
 }
 
 func TestParseSampleBatchFile(t *testing.T) {
-	data, err := os.ReadFile("../../config/.epp/xml/example-batch.xml")
+	data, err := os.ReadFile("../../config/.epp-id/xml/example-batch.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
