@@ -9,8 +9,8 @@ import (
 
 func TestSampleCertificateChainAndPrivateKey(t *testing.T) {
 	pair, err := tls.LoadX509KeyPair(
-		"../../config/.epp/ssl/certificate.pem",
-		"../../config/.epp/ssl/certificate.key",
+		"../../config/.epp-id/ssl/certificate.pem",
+		"../../config/.epp-id/ssl/certificate.key",
 	)
 	if err != nil {
 		t.Fatal(err)
