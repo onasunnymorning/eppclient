@@ -21,13 +21,13 @@ import (
 var (
 	profileName string
 	verbose     bool
-	version     = "EPP-ID 2026080801"
+	version     = "EPP-ID 2026080802"
 	maintainer  = "freddy@pandi.id"
 )
 
 func main() {
 	// Global flags
-	flag.StringVar(&profileName, "profile", "default", "profile name in ~/.epp/credentials")
+	flag.StringVar(&profileName, "profile", "default", "profile name in ~/.epp-id/credentials")
 	flag.BoolVar(&verbose, "v", false, "enable verbose debug logging")
 
 	// Capture logs
@@ -98,13 +98,14 @@ func main() {
 			os.Exit(0)
 		}
 	}
+	logDir := logDirectory(configDir)
 
 	if cmd == "version" {
 		runVersion()
 		os.Exit(0)
 	}
 	if isSSLCheck(cmd, subArgs) {
-		path, err := runSSLCheck(profileName, ".", commandStartedAt)
+		path, err := runSSLCheck(profileName, logDir, commandStartedAt)
 		if path != "" {
 			fmt.Fprintf(os.Stderr, "SSL test log saved to %s\n", path)
 		}
@@ -136,13 +137,13 @@ func main() {
 			closeConnection(conn, automaticSession)
 			commandEndedAt := time.Now()
 			epp.DebugLogger = logger
-			printAndSaveRawXML(os.Stderr, ".", commandStartedAt, commandEndedAt, &logBuf)
+			printAndSaveRawXML(os.Stderr, logDir, commandStartedAt, commandEndedAt, &logBuf)
 			os.Exit(1)
 		}
 		closeConnection(conn, automaticSession)
 		commandEndedAt := time.Now()
 		epp.DebugLogger = logger
-		printAndSaveRawXML(os.Stderr, ".", commandStartedAt, commandEndedAt, &logBuf)
+		printAndSaveRawXML(os.Stderr, logDir, commandStartedAt, commandEndedAt, &logBuf)
 	}()
 
 	switch cmd {
