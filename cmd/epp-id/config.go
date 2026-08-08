@@ -20,12 +20,18 @@ type Config struct {
 	CACert   string
 }
 
+const (
+	userConfigDirectoryName = ".epp-id"
+	credentialsFilename     = "credentials"
+	userLogDirectoryName    = "log"
+)
+
 func loadConfig(profile string, requireUser bool) (*Config, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(homeDir, ".epp", "credentials")
+	path := filepath.Join(homeDir, userConfigDirectoryName, credentialsFilename)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -107,7 +113,11 @@ func installUserConfig() (string, bool, error) {
 		return "", false, err
 	}
 
-	configDir := filepath.Join(homeDir, ".epp")
-	credentialsCreated := sampleconfig.Created(created, ".epp/credentials")
+	configDir := filepath.Join(homeDir, userConfigDirectoryName)
+	credentialsCreated := sampleconfig.Created(created, filepath.ToSlash(filepath.Join(userConfigDirectoryName, credentialsFilename)))
 	return configDir, credentialsCreated, nil
+}
+
+func logDirectory(configDir string) string {
+	return filepath.Join(configDir, userLogDirectoryName)
 }
