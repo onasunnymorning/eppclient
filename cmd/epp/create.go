@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ type domainCreateFlags struct {
 	period                           int
 	auth, ns, phase, fee, currency   string
 	registrant, admin, tech, billing string
+
+	// given reports whether a flag was passed, even with an empty value:
+	// --ns '' means "no nameservers", not "use the profile default".
+	given func(name string) bool
 }
 
 // domainCreate is what will be sent, plus notes on where values came from.
@@ -42,7 +47,9 @@ type domainCreate struct {
 	price      string            // from the fee check, shown only
 	notes      map[string]string // field -> "generated", "profile default", ...
 
-	savedContact string // default contact taken from ~/.epp/state.json, if any
+	savedContact string          // default contact taken from ~/.epp/state.json, if any
+	defaultRoles map[string]bool // roles a default contact fills when not given
+	defaultNS    bool            // the profile has default nameservers
 }
 
 var contactTypes = []string{"admin", "tech", "billing"}
@@ -72,6 +79,9 @@ With -y the defaults are used without questions.`,
   epp create domain geoff.test --phase sunrise --fee 100.00 --currency USD`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			fl.given = func(name string) bool {
+				return cmd.Flags().Changed(name) || cmd.Flags().Changed("contact-"+name)
+			}
 			runCreateDomain(args[0], &fl)
 		},
 	}
@@ -116,9 +126,10 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 		d.auth = genAuthInfo()
 		d.notes["auth"] = "generated"
 	}
-	if fl.ns != "" {
+	d.defaultNS = len(cfg.NS) > 0
+	if fl.given("ns") {
 		d.ns = parseList(fl.ns)
-	} else if len(cfg.NS) > 0 {
+	} else if d.defaultNS {
 		d.ns = cfg.NS
 		d.notes["ns"] = "profile default"
 	}
@@ -131,7 +142,7 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 		"admin":      fl.admin,
 		"tech":       fl.tech,
 		"billing":    fl.billing,
-	})
+	}, fl.given)
 
 	d.check(c, true)
 
@@ -183,8 +194,10 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 }
 
 // setContacts uses the contact IDs given as flags and fills the roles in
-// contact_roles that are still empty with the profile's default contact.
-func (d *domainCreate) setContacts(c *epp.Conn, ids map[string]string) {
+// contact_roles that weren't given with the profile's default contact.
+// A role given as an empty flag stays empty.
+func (d *domainCreate) setContacts(c *epp.Conn, ids map[string]string, given func(string) bool) {
+	d.defaultRoles = map[string]bool{}
 	if usesContacts(c) {
 		var missing []string
 		for _, role := range cfg.ContactRoles {
@@ -192,7 +205,8 @@ func (d *domainCreate) setContacts(c *epp.Conn, ids map[string]string) {
 				warnf("Ignoring unknown role %q in contact_roles", role)
 				continue
 			}
-			if ids[role] == "" {
+			d.defaultRoles[role] = true
+			if !given(role) {
 				missing = append(missing, role)
 			}
 		}
@@ -249,6 +263,7 @@ func pickDefaultContact(c *epp.Conn) string {
 		}
 	}
 	saveContact(opts.profile, id)
+	recordChange("saved %s as the default contact for profile %q", id, opts.profile)
 	fmt.Fprintf(os.Stderr, "Saved %s as the default contact for profile %q.\n", id, opts.profile)
 	return id
 }
@@ -259,7 +274,9 @@ func createTestContact(c *epp.Conn) string {
 	tc := newTestContact(cfg.Email)
 	_, err := c.CreateContact(tc.ID, tc.Email, tc.Postal, tc.Voice, tc.Auth, nil)
 	fatalif(err)
+	recordChange("created test contact %s", tc.ID)
 	saveContact(opts.profile, tc.ID)
+	recordChange("saved %s as the default contact for profile %q", tc.ID, opts.profile)
 	color.Fprintf(os.Stderr, "@{g}Created test contact %s@{|} (now the default for profile %q)\n", tc.ID, opts.profile)
 	return tc.ID
 }
@@ -292,33 +309,66 @@ func (d *domainCreate) check(c *epp.Conn, confirmTaken bool) {
 		}
 	}
 
-	amount, currency := createFee(dc, d.name)
-	if amount == "" {
+	amounts, currency := createFees(dc, d.name)
+	if len(amounts) == 0 {
 		return
 	}
-	d.price = strings.TrimSpace(amount + " " + currency)
+	d.price = strings.TrimSpace(sumAmounts(amounts) + " " + currency)
+	if len(amounts) > 1 {
+		d.price += " (" + strings.Join(amounts, " + ") + ")"
+	}
 
 	// A fee from --fee wins. The library sends the fee in fee-1.0 form, and a
 	// fee check without a phase prices the registry's default (1 year) only.
-	if d.notes["fee"] == "" && c.Greeting.SupportsExtension(epp.ExtFee10) && (d.period == 1 || d.phase != "") {
-		d.fee, d.currency = amount, currency
-		d.notes["fee"] = "fee check"
+	if d.notes["fee"] != "" || !c.Greeting.SupportsExtension(epp.ExtFee10) || (d.period != 1 && d.phase == "") {
+		return
 	}
+	if len(amounts) > 1 {
+		// The library sends a single fee element; don't guess how the registry
+		// wants several items accepted.
+		warnf("The registry quoted %d create fee items (%s); pass --fee to accept them.", len(amounts), d.price)
+		return
+	}
+	d.fee, d.currency = amounts[0], currency
+	d.notes["fee"] = "fee check"
 }
 
-// createFee finds the create fee for domain in a check response.
-func createFee(dc *epp.DomainCheckResponse, domain string) (amount, currency string) {
+// createFees returns every create fee item quoted for domain, e.g. an
+// application fee and a registration fee, with their currency.
+func createFees(dc *epp.DomainCheckResponse, domain string) (amounts []string, currency string) {
 	for _, ch := range dc.Charges {
 		if ch.Domain != "" && !strings.EqualFold(ch.Domain, domain) {
 			continue
 		}
 		for _, f := range ch.Fees {
 			if f.Name == "create" && f.Amount != "" {
-				return f.Amount, firstNonEmpty(f.Currency, ch.Currency, dc.Currency)
+				amounts = append(amounts, f.Amount)
+				currency = firstNonEmpty(currency, f.Currency, ch.Currency, dc.Currency)
 			}
 		}
 	}
-	return "", ""
+	return amounts, currency
+}
+
+// sumAmounts adds decimal amounts, keeping the largest number of decimals.
+// If an amount can't be parsed it returns them joined with " + ".
+func sumAmounts(amounts []string) string {
+	if len(amounts) == 1 {
+		return amounts[0]
+	}
+	total := new(big.Rat)
+	decimals := 0
+	for _, a := range amounts {
+		r, ok := new(big.Rat).SetString(a)
+		if !ok {
+			return strings.Join(amounts, " + ")
+		}
+		total.Add(total, r)
+		if i := strings.IndexByte(a, '.'); i >= 0 {
+			decimals = max(decimals, len(a)-i-1)
+		}
+	}
+	return total.FloatString(decimals)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -416,18 +466,20 @@ func validPeriod(s string) error {
 	return nil
 }
 
-// args is the equivalent command line for this create.
+// args is the equivalent command line for this create. A field left empty
+// is passed as an empty flag when a default would otherwise fill it.
 func (d *domainCreate) args() []string {
 	a := []string{"create", "domain", d.name, "--period", strconv.Itoa(d.period)}
-	if d.registrant != "" {
-		a = append(a, "--registrant", d.registrant)
-	}
+	roles := map[string]string{"registrant": d.registrant}
 	for _, t := range contactTypes {
-		if id := d.contacts[t]; id != "" {
-			a = append(a, "--"+t, id)
+		roles[t] = d.contacts[t]
+	}
+	for _, role := range append([]string{"registrant"}, contactTypes...) {
+		if roles[role] != "" || d.defaultRoles[role] {
+			a = append(a, "--"+role, roles[role])
 		}
 	}
-	if len(d.ns) > 0 {
+	if len(d.ns) > 0 || d.defaultNS {
 		a = append(a, "--ns", strings.Join(d.ns, ","))
 	}
 	a = append(a, "--auth", d.auth)
@@ -449,6 +501,7 @@ func (d *domainCreate) args() []string {
 type contactCreateFlags struct {
 	id, email, name, org, street, city, sp, pc, cc, voice, auth string
 	makeDefault                                                 bool
+	given                                                       func(name string) bool
 }
 
 func newCreateContactCmd() *cobra.Command {
@@ -466,6 +519,7 @@ Use --default to make it the default contact for domain creates in this profile.
   epp create contact --id CID-1 --name "John Doe" --email john@example.com --city "New York" --cc US`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			fl.given = cmd.Flags().Changed
 			runCreateContact(&fl)
 		},
 	}
@@ -490,8 +544,9 @@ func runCreateContact(fl *contactCreateFlags) {
 
 	tc := newTestContact(cfg.Email)
 	notes := map[string]string{}
+	// key is the flag name. A flag passed empty clears the placeholder.
 	use := func(dst *string, flag, key, fallbackNote string) {
-		if flag != "" {
+		if fl.given(key) {
 			*dst = flag
 		} else if *dst != "" {
 			notes[key] = fallbackNote
@@ -546,13 +601,16 @@ func runCreateContact(fl *contactCreateFlags) {
 		fmt.Fprintf(os.Stderr, "Saved %s as the default contact for profile %q.\n", tc.ID, opts.profile)
 	}
 
-	a := []string{"create", "contact", "--id", tc.ID, "--name", tc.Postal.Name}
+	// Every field but org has a default, so pass even empty ones: otherwise a
+	// replay would put the placeholder back.
+	a := []string{"create", "contact"}
 	for _, kv := range [][2]string{
-		{"--org", tc.Postal.Org}, {"--street", tc.Postal.Street}, {"--city", tc.Postal.City},
+		{"--id", tc.ID}, {"--name", tc.Postal.Name}, {"--org", tc.Postal.Org},
+		{"--street", tc.Postal.Street}, {"--city", tc.Postal.City},
 		{"--sp", tc.Postal.SP}, {"--pc", tc.Postal.PC}, {"--cc", tc.Postal.CC},
 		{"--email", tc.Email}, {"--voice", tc.Voice}, {"--auth", tc.Auth},
 	} {
-		if kv[1] != "" {
+		if kv[1] != "" || kv[0] != "--org" {
 			a = append(a, kv[0], kv[1])
 		}
 	}

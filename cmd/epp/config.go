@@ -98,15 +98,15 @@ func parseConfig(r io.Reader, profile string) (*Config, error) {
 		case "ca":
 			cfg.CACert = val
 		case "contact":
-			cfg.Contact = val
+			cfg.Contact = stripComment(val)
 		case "contact_roles":
-			if roles := parseList(val); len(roles) > 0 {
+			if roles := parseList(stripComment(val)); len(roles) > 0 {
 				cfg.ContactRoles = roles
 			}
 		case "ns":
-			cfg.NS = parseList(val)
+			cfg.NS = parseList(stripComment(val))
 		case "email":
-			cfg.Email = val
+			cfg.Email = stripComment(val)
 		}
 	}
 
@@ -122,6 +122,18 @@ func parseConfig(r io.Reader, profile string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// stripComment removes a trailing "# comment" (or "; comment") preceded by
+// whitespace. Only used for the default keys: contact IDs, roles, host names
+// and email addresses can't contain such a sequence, while passwords can.
+func stripComment(val string) string {
+	for i := 0; i < len(val); i++ {
+		if (val[i] == '#' || val[i] == ';') && (i == 0 || val[i-1] == ' ' || val[i-1] == '\t') {
+			return strings.TrimSpace(val[:i])
+		}
+	}
+	return val
 }
 
 // listProfiles returns the section names in the credentials file.

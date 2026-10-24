@@ -2,6 +2,8 @@ package main
 
 import (
 	"path/filepath"
+
+	epp "github.com/onasunnymorning/eppclient"
 	"reflect"
 	"regexp"
 	"strings"
@@ -57,9 +59,18 @@ func TestNormalizeLegacyFlags(t *testing.T) {
 		{"renew domain x.test --period -1", "renew domain x.test --period -1"},
 		{"raw -", "raw -"},
 		{"raw -- -odd", "raw -- -odd"},
+		// Values after a flag are never rewritten.
+		{"create domain x.test --auth -Secret123!", "create domain x.test --auth -Secret123!"},
+		{"create domain x.test -auth -Secret123!", "create domain x.test --auth -Secret123!"},
+		{"create domain x.test --auth=-Secret123! -period 2", "create domain x.test --auth=-Secret123! --period 2"},
+		// Boolean flags don't take the next argument as a value.
+		{"-y create domain x.test -period 2", "-y create domain x.test --period 2"},
+		{"create contact --default -name Geoff", "create contact --default --name Geoff"},
+		{"create contact -default -name Geoff", "create contact --default --name Geoff"},
 	}
+	bools := collectBoolFlags(newRootCmd())
 	for _, c := range cases {
-		got := strings.Join(normalizeLegacyFlags(strings.Fields(c.in)), " ")
+		got := strings.Join(normalizeLegacyFlags(strings.Fields(c.in), bools), " ")
 		if got != c.want {
 			t.Errorf("normalizeLegacyFlags(%q) = %q, want %q", c.in, got, c.want)
 		}
@@ -75,11 +86,11 @@ tls = true
 
 [ote]
 user = b
-password = secret
-contact = c-1
-contact_roles = registrant, tech
-ns = ns1.example.net , ns2.example.net
-email = me@example.net
+password = secret #1
+contact = c-1                  # contact for registrant/admin/tech
+contact_roles = registrant, tech   # roles filled on domain create
+ns = ns1.example.net , ns2.example.net ; nameservers
+email = me@example.net	# email for test contacts
 `
 	cfg, err := parseConfig(strings.NewReader(ini), "ote")
 	if err != nil {
@@ -87,7 +98,7 @@ email = me@example.net
 	}
 	want := &Config{
 		User:         "b",
-		Password:     "secret",
+		Password:     "secret #1", // passwords keep everything after "="
 		Contact:      "c-1",
 		ContactRoles: []string{"registrant", "tech"},
 		NS:           []string{"ns1.example.net", "ns2.example.net"},
@@ -160,6 +171,48 @@ func TestShellQuote(t *testing.T) {
 	for in, want := range cases {
 		if got := shellQuote(in); got != want {
 			t.Errorf("shellQuote(%q) = %s, want %s", in, got, want)
+		}
+	}
+}
+
+func TestCreateFees(t *testing.T) {
+	dc := &epp.DomainCheckResponse{
+		Currency: "USD",
+		Charges: []epp.DomainCharge{
+			{Domain: "other.test", Fees: []epp.Fee{{Name: "create", Amount: "1.00"}}},
+			{Domain: "geoff.test", Currency: "EUR", Fees: []epp.Fee{
+				{Name: "create", Amount: "100.00"},
+				{Name: "create", Amount: "12.5"},
+				{Name: "renew", Amount: "12.50"},
+			}},
+		},
+	}
+	amounts, currency := createFees(dc, "GEOFF.test")
+	if !reflect.DeepEqual(amounts, []string{"100.00", "12.5"}) || currency != "EUR" {
+		t.Fatalf("got %v %q", amounts, currency)
+	}
+	if got := sumAmounts(amounts); got != "112.50" {
+		t.Fatalf("sum = %q", got)
+	}
+	if got := sumAmounts([]string{"7"}); got != "7" {
+		t.Fatalf("single = %q", got)
+	}
+	if got := sumAmounts([]string{"1.00", "n/a"}); got != "1.00 + n/a" {
+		t.Fatalf("unparsable = %q", got)
+	}
+}
+
+func TestStripComment(t *testing.T) {
+	cases := map[string]string{
+		"c-1  # note":    "c-1",
+		"c-1\t; note":    "c-1",
+		"# only":         "",
+		"a#b":            "a#b",
+		"me@example.net": "me@example.net",
+	}
+	for in, want := range cases {
+		if got := stripComment(in); got != want {
+			t.Errorf("stripComment(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -19,6 +19,7 @@ type fakeServer struct {
 	ln       net.Listener
 	objects  []string
 	taken    map[string]bool
+	fees     []string // create fee items quoted by domain:check
 	mu       sync.Mutex
 	requests []string
 }
@@ -29,7 +30,7 @@ func newFakeServer(t *testing.T, objects ...string) *fakeServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &fakeServer{ln: ln, objects: objects, taken: map[string]bool{}}
+	s := &fakeServer{ln: ln, objects: objects, taken: map[string]bool{}, fees: []string{"12.00"}}
 	t.Cleanup(func() { ln.Close() })
 	go func() {
 		for {
@@ -94,7 +95,11 @@ func (s *fakeServer) respond(req string) string {
 				avail = "0"
 			}
 			fmt.Fprintf(&chk, `<domain:cd><domain:name avail="%s">%s</domain:name></domain:cd>`, avail, m[1])
-			fmt.Fprintf(&fee, `<fee:cd avail="1"><fee:objID>%s</fee:objID><fee:command name="create"><fee:period unit="y">1</fee:period><fee:fee>12.00</fee:fee></fee:command></fee:cd>`, m[1])
+			var items strings.Builder
+			for _, f := range s.fees {
+				items.WriteString("<fee:fee>" + f + "</fee:fee>")
+			}
+			fmt.Fprintf(&fee, `<fee:cd avail="1"><fee:objID>%s</fee:objID><fee:command name="create"><fee:period unit="y">1</fee:period>%s</fee:command></fee:cd>`, m[1], items.String())
 		}
 		return eppResponse(1000,
 			`<resData><domain:chkData xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">`+chk.String()+`</domain:chkData></resData>`+
@@ -175,7 +180,7 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	errF, _ := os.CreateTemp(t.TempDir(), "err")
 	oldOut, oldErr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = outF, errF
-	code = run(normalizeLegacyFlags(args))
+	code = run(args)
 	os.Stdout, os.Stderr = oldOut, oldErr
 	o, _ := os.ReadFile(outF.Name())
 	e, _ := os.ReadFile(errF.Name())
@@ -346,4 +351,61 @@ func TestOfflineCommandsDontConnect(t *testing.T) {
 	if code, _, _ := runCLI(t, "info", "foo"); code != 1 {
 		t.Errorf("unknown noun: exit %d, want 1", code)
 	}
+}
+
+func TestCreateDomainEmptyFlagsOverrideDefaults(t *testing.T) {
+	srv := newFakeServer(t, objDomain, objContact)
+	setupHome(t, srv, "contact = c-default\nns = ns1.example.net")
+
+	code, _, errOut := runCLI(t, "create", "domain", "geoff.test", "--ns", "", "--tech", "")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	create := srv.requestsWith("<domain:create")[0]
+	if strings.Contains(create, "<domain:hostObj>") || strings.Contains(create, `type="tech"`) {
+		t.Fatalf("empty --ns/--tech were replaced by defaults:\n%s", create)
+	}
+	mustContain(t, "domain create", create, "<domain:registrant>c-default</domain:registrant>")
+	// The equivalent command keeps the empty overrides, so a replay matches.
+	mustContain(t, "stderr", errOut, "--tech ''", "--ns ''", "--registrant c-default")
+}
+
+func TestCreateContactEmptyFlagsOverridePlaceholders(t *testing.T) {
+	srv := newFakeServer(t, objDomain, objContact)
+	setupHome(t, srv, "")
+
+	code, _, errOut := runCLI(t, "create", "contact", "--voice", "", "--sp", "")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	req := srv.requestsWith("<contact:create")[0]
+	if strings.Contains(req, "<contact:voice>") || strings.Contains(req, "<contact:sp>") {
+		t.Fatalf("empty --voice/--sp were replaced by placeholders:\n%s", req)
+	}
+	mustContain(t, "stderr", errOut, "--voice ''", "--sp ''", "--street ")
+}
+
+func TestCreateDomainLegacyAuthValueKept(t *testing.T) {
+	srv := newFakeServer(t, objDomain)
+	setupHome(t, srv, "")
+
+	if code, _, errOut := runCLI(t, "create", "domain", "geoff.test", "-auth", "-Secret123!"); code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	mustContain(t, "domain create", srv.requestsWith("<domain:create")[0], "<domain:pw>-Secret123!</domain:pw>")
+}
+
+func TestCreateDomainMultipleFeeItemsNotAutoAccepted(t *testing.T) {
+	srv := newFakeServer(t, objDomain)
+	srv.fees = []string{"100.00", "12.00"}
+	setupHome(t, srv, "")
+
+	code, _, errOut := runCLI(t, "create", "domain", "geoff.test")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	if create := srv.requestsWith("<domain:create")[0]; strings.Contains(create, "<fee:fee>") {
+		t.Fatalf("fee sent for a multi-item quote:\n%s", create)
+	}
+	mustContain(t, "stderr", errOut, "quoted 2 create fee items", "112.00 USD (100.00 + 12.00)", "fee check, not sent")
 }

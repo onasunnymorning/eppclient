@@ -9,6 +9,7 @@ import (
 
 	epp "github.com/onasunnymorning/eppclient"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -28,14 +29,15 @@ var opts struct {
 var logBuf bytes.Buffer
 
 func main() {
-	os.Exit(run(normalizeLegacyFlags(os.Args[1:])))
+	os.Exit(run(os.Args[1:]))
 }
 
 func run(args []string) (code int) {
 	logBuf.Reset()
 	cfg = nil
+	changesMade = nil
 	root := newRootCmd()
-	root.SetArgs(args)
+	root.SetArgs(normalizeLegacyFlags(args, collectBoolFlags(root)))
 
 	defer func() {
 		offerXML := code != 0
@@ -118,30 +120,89 @@ Credentials and per-profile defaults live in ~/.epp/credentials.`,
 
 // normalizeLegacyFlags rewrites single-dash long flags (-period 2) to the
 // double-dash form (--period 2), so commands written for the older CLI keep
-// working. Short flags (-v, -y, -h, -vy) and negative numbers are left alone.
-func normalizeLegacyFlags(args []string) []string {
+// working. Short flags (-v, -y, -h, -vy) are left alone, and so is the value
+// after any flag that takes one: "--auth -Secret1!" keeps its authInfo.
+// boolFlags holds the names and shorthands of flags that take no value.
+func normalizeLegacyFlags(args []string, boolFlags map[string]bool) []string {
 	out := make([]string, 0, len(args))
+	takesValue := false
 	for i, a := range args {
+		if takesValue {
+			out = append(out, a)
+			takesValue = false
+			continue
+		}
 		if a == "--" {
 			return append(out, args[i:]...)
 		}
-		if isLegacyLongFlag(a) {
+		if !isFlagToken(a) {
+			out = append(out, a)
+			continue
+		}
+
+		dashes := 2
+		if a[1] != '-' {
+			dashes = 1
+		}
+		name, _, hasValue := strings.Cut(a[dashes:], "=")
+		shortGroup := dashes == 1 && allShorthands(name, boolFlags)
+		if dashes == 1 && !shortGroup {
 			a = "-" + a
 		}
 		out = append(out, a)
+
+		// A flag that isn't boolean takes the next argument as its value,
+		// unless it was written as --name=value.
+		takesValue = !hasValue && !shortGroup && !boolFlags[name]
 	}
 	return out
 }
 
-func isLegacyLongFlag(a string) bool {
-	if len(a) < 3 || a[0] != '-' || a[1] == '-' || !unicode.IsLetter(rune(a[1])) {
+// isFlagToken reports whether a looks like a flag rather than a value such
+// as "-" (stdin) or a negative number.
+func isFlagToken(a string) bool {
+	if len(a) < 2 || a[0] != '-' {
 		return false
 	}
-	name := a[1:]
-	if i := strings.IndexByte(name, '='); i >= 0 {
-		name = name[:i]
+	if a[1] == '-' {
+		return len(a) > 2
 	}
-	return strings.Trim(name, "vyh") != ""
+	return unicode.IsLetter(rune(a[1]))
+}
+
+// allShorthands reports whether every letter of name is a boolean shorthand,
+// as in -v or -vy.
+func allShorthands(name string, boolFlags map[string]bool) bool {
+	for _, r := range name {
+		if !boolFlags[string(r)] {
+			return false
+		}
+	}
+	return name != ""
+}
+
+// collectBoolFlags returns the names and shorthands of every boolean flag in
+// the command tree.
+func collectBoolFlags(root *cobra.Command) map[string]bool {
+	names := map[string]bool{"help": true, "h": true}
+	add := func(f *pflag.Flag) {
+		if f.Value.Type() == "bool" {
+			names[f.Name] = true
+			if f.Shorthand != "" {
+				names[f.Shorthand] = true
+			}
+		}
+	}
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		c.Flags().VisitAll(add)
+		c.PersistentFlags().VisitAll(add)
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
+	return names
 }
 
 // newGroupCmd returns a parent command such as "create". Without arguments

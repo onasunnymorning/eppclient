@@ -35,8 +35,23 @@ func fatalf(format string, a ...any) {
 	fatalif(fmt.Errorf(format, a...))
 }
 
+// changesMade lists what this run already changed (on the registry or in
+// ~/.epp), so a later cancel can say so.
+var changesMade []string
+
+func recordChange(format string, a ...any) {
+	changesMade = append(changesMade, fmt.Sprintf(format, a...))
+}
+
 func abort() {
-	fmt.Fprintln(os.Stderr, "Cancelled, nothing was sent.")
+	if len(changesMade) == 0 {
+		fmt.Fprintln(os.Stderr, "Cancelled, nothing was changed.")
+	} else {
+		fmt.Fprintln(os.Stderr, "Cancelled. Already done before cancelling:")
+		for _, c := range changesMade {
+			fmt.Fprintf(os.Stderr, "  - %s\n", c)
+		}
+	}
 	panic(abortError{})
 }
 
