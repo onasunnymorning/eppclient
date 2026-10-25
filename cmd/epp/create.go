@@ -63,7 +63,7 @@ func newCreateDomainCmd() *cobra.Command {
 		Long: `Register a domain. Anything you leave out gets a default:
 
   period       1 year
-  authInfo     a random password
+  authInfo     a random 24-character password (over 128 bits)
   contacts     roles the contact policy marks required are sent with the
                profile's default contact (contact = ... in ~/.epp/credentials).
                Without one, you're asked once to create a test contact or give
@@ -165,7 +165,9 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 		if !interactive() || reviewChoice("Yes, create it") == reviewProceed {
 			break
 		}
-		if d.edit() {
+		periodChanged := d.edit()
+		d.warnPolicy()
+		if periodChanged {
 			// Period changed: the price we had may no longer apply.
 			if d.notes["fee"] == "fee check" {
 				d.fee, d.currency = "", ""
@@ -199,7 +201,7 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 	res, err := c.CreateDomain(d.name, d.period, "y", d.auth, d.contacts["registrant"], others, d.ns, ext)
 	if err != nil {
 		logif(err)
-		if d.savedContact != "" {
+		if d.sendsSavedContact() && isEPPCode(err, 2303) {
 			warnf("If contact %s no longer exists, run `epp create contact --default` to make a new default.", d.savedContact)
 		}
 		panic(fatalError{err})
@@ -210,6 +212,24 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 	fmt.Printf("Expiry:   %s\n", res.ExDate)
 	fmt.Printf("AuthInfo: %s\n", d.auth)
 	printEquivalent(d.args()...)
+}
+
+// sendsSavedContact reports whether the default contact from
+// ~/.epp/state.json is part of the request.
+func (d *domainCreate) sendsSavedContact() bool {
+	for _, id := range d.contacts {
+		if d.savedContact != "" && id == d.savedContact {
+			return true
+		}
+	}
+	return false
+}
+
+// isEPPCode reports whether err is an EPP result with the given code, such
+// as 2303 (object does not exist).
+func isEPPCode(err error, code int) bool {
+	var res *epp.Result
+	return errors.As(err, &res) && res.Code == code
 }
 
 // setContacts decides which contact roles to send, and with which IDs. A
@@ -261,14 +281,28 @@ func (d *domainCreate) setContacts(c *epp.Conn, ids map[string]string, fl *domai
 		}
 	}
 
+	d.warnPolicy()
+}
+
+// policyConflict describes a role whose sending goes against its policy,
+// or returns "" when it doesn't.
+func (d *domainCreate) policyConflict(role string) string {
+	p := d.policies[role]
+	sent := d.contacts[role] != ""
+	switch {
+	case sent && p.policy == prohibited:
+		return fmt.Sprintf("The %s contact is %s, but will be sent.", role, p)
+	case !sent && p.policy == required:
+		return fmt.Sprintf("The %s contact is %s, but won't be sent.", role, p)
+	}
+	return ""
+}
+
+// warnPolicy warns about roles sent against their policy.
+func (d *domainCreate) warnPolicy() {
 	for _, role := range contactRoles {
-		p := d.policies[role]
-		sent := d.contacts[role] != ""
-		switch {
-		case sent && p.policy == prohibited:
-			warnf("The %s contact is %s, but will be sent.", role, p)
-		case !sent && p.policy == required:
-			warnf("The %s contact is %s, but won't be sent.", role, p)
+		if msg := d.policyConflict(role); msg != "" {
+			warnf("%s", msg)
 		}
 	}
 }
@@ -424,18 +458,18 @@ func (d *domainCreate) rows() []reviewRow {
 	rows := []reviewRow{{label: "period", value: fmt.Sprintf("%dy", d.period)}}
 	rows = append(rows, d.contactRows()...)
 	rows = append(rows,
-		reviewRow{"nameservers", strings.Join(d.ns, ", "), d.notes["ns"]},
-		reviewRow{"authInfo", d.auth, d.notes["auth"]},
+		row("nameservers", strings.Join(d.ns, ", "), d.notes["ns"]),
+		row("authInfo", d.auth, d.notes["auth"]),
 	)
 	if d.phase != "" {
 		rows = append(rows, reviewRow{label: "phase", value: d.phase})
 	}
 	fee := strings.TrimSpace(d.fee + " " + d.currency)
 	if d.fee != "" {
-		rows = append(rows, reviewRow{"fee", fee, d.notes["fee"]})
+		rows = append(rows, row("fee", fee, d.notes["fee"]))
 	}
 	if d.price != "" && d.price != fee {
-		rows = append(rows, reviewRow{"price", d.price, "fee check, not sent"})
+		rows = append(rows, row("price", d.price, "fee check, not sent"))
 	}
 	return rows
 }
@@ -450,7 +484,7 @@ func (d *domainCreate) contactRows() []reviewRow {
 			same = same && d.policies[role] == first
 		}
 		if same && first.policy == prohibited {
-			return []reviewRow{{"contacts", "none", first.String()}}
+			return []reviewRow{{label: "contacts", value: "none", note: first.String()}}
 		}
 	}
 
@@ -468,7 +502,7 @@ func (d *domainCreate) contactRows() []reviewRow {
 		if src := d.notes[role]; id != "" && src != "" {
 			note += ", " + src
 		}
-		rows = append(rows, reviewRow{role, id, note})
+		rows = append(rows, reviewRow{label: role, value: id, note: note, warn: d.policyConflict(role) != ""})
 	}
 	return rows
 }
@@ -486,7 +520,7 @@ func (d *domainCreate) edit() (periodChanged bool) {
 	}
 	runForm(huh.NewMultiSelect[string]().
 		Title("Contacts to send").
-		Description("space toggles, enter continues").
+		Description("space ticks or unticks the highlighted role, enter continues").
 		Options(options...).
 		Value(&selected))
 
@@ -715,21 +749,21 @@ func runCreateContact(fl *contactCreateFlags) {
 
 func contactRows(tc testContact, notes map[string]string) []reviewRow {
 	rows := []reviewRow{
-		{"id", tc.ID, notes["id"]},
-		{"name", tc.Postal.Name, notes["name"]},
+		row("id", tc.ID, notes["id"]),
+		row("name", tc.Postal.Name, notes["name"]),
 	}
 	if tc.Postal.Org != "" {
-		rows = append(rows, reviewRow{"org", tc.Postal.Org, notes["org"]})
+		rows = append(rows, row("org", tc.Postal.Org, notes["org"]))
 	}
 	return append(rows,
-		reviewRow{"street", tc.Postal.Street, notes["street"]},
-		reviewRow{"city", tc.Postal.City, notes["city"]},
-		reviewRow{"state/prov", tc.Postal.SP, notes["sp"]},
-		reviewRow{"postal code", tc.Postal.PC, notes["pc"]},
-		reviewRow{"country", tc.Postal.CC, notes["cc"]},
-		reviewRow{"email", tc.Email, notes["email"]},
-		reviewRow{"voice", tc.Voice, notes["voice"]},
-		reviewRow{"authInfo", tc.Auth, notes["auth"]},
+		row("street", tc.Postal.Street, notes["street"]),
+		row("city", tc.Postal.City, notes["city"]),
+		row("state/prov", tc.Postal.SP, notes["sp"]),
+		row("postal code", tc.Postal.PC, notes["pc"]),
+		row("country", tc.Postal.CC, notes["cc"]),
+		row("email", tc.Email, notes["email"]),
+		row("voice", tc.Voice, notes["voice"]),
+		row("authInfo", tc.Auth, notes["auth"]),
 	)
 }
 

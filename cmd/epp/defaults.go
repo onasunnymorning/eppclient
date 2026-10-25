@@ -12,7 +12,10 @@ const (
 	upperChars  = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	digitChars  = "0123456789"
 	symbolChars = "!#%*+=?@_" // shell- and XML-friendly
-	authLength  = 16
+	// 24 characters keep the authInfo above 128 bits of randomness (about
+	// 139 bits with the guaranteed character classes), which registries
+	// increasingly require.
+	authLength = 24
 )
 
 func randIndex(n int) int {
@@ -23,9 +26,10 @@ func randIndex(n int) int {
 	return int(i.Int64())
 }
 
-// genAuthInfo returns a random 16-character password with at least one
+// genAuthInfo returns a random 24-character password with at least one
 // lowercase letter, uppercase letter, digit and symbol, which satisfies
-// the authInfo rules of most registries.
+// the authInfo rules of most registries, including a 128-bit minimum.
+// It's used for domain and contact authInfo.
 func genAuthInfo() string {
 	classes := []string{lowerChars, upperChars, digitChars, symbolChars}
 	all := lowerChars + upperChars + digitChars + symbolChars
