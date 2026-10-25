@@ -218,15 +218,18 @@ func TestCreateDomainCreatesAndReusesTestContact(t *testing.T) {
 	}
 	mustContain(t, "domain create", creates[0],
 		"<domain:registrant>"+id+"</domain:registrant>",
-		`<domain:contact type="admin">`+id+`</domain:contact>`,
-		`<domain:contact type="tech">`+id+`</domain:contact>`,
 		`<domain:period unit="y">1</domain:period>`,
 		"<fee:fee>12.00</fee:fee>",
 		"<fee:currency>USD</fee:currency>",
 		"<domain:pw>",
 	)
+	// By default only the registrant is required; admin, tech and billing are optional.
+	if strings.Contains(creates[0], "<domain:contact") {
+		t.Fatalf("optional contacts sent by default:\n%s", creates[0])
+	}
 	mustContain(t, "stdout", out, "Domain geoff.test created!", "AuthInfo: ")
-	mustContain(t, "stderr", errOut, "Created test contact "+id, "To repeat without prompts:", "--registrant "+id)
+	mustContain(t, "stderr", errOut, "Created test contact "+id, "To repeat without prompts:",
+		"--contacts registrant --registrant "+id, "optional, not sent")
 
 	if got := savedContact("default"); got != id {
 		t.Fatalf("saved contact = %q, want %q", got, id)
@@ -277,7 +280,7 @@ func TestCreateDomainThinRegistrySkipsContacts(t *testing.T) {
 
 func TestCreateDomainFlagsAndProfileDefaults(t *testing.T) {
 	srv := newFakeServer(t, objDomain, objContact)
-	setupHome(t, srv, "contact = c-default\nns = ns1.example.net, ns2.example.net")
+	setupHome(t, srv, "contact = c-default\ncontacts = tech:required\nns = ns1.example.net, ns2.example.net")
 
 	// Old single-dash flag style, including a legacy flag name.
 	code, _, errOut := runCLI(t, "create", "domain", "geoff.test",
@@ -355,7 +358,7 @@ func TestOfflineCommandsDontConnect(t *testing.T) {
 
 func TestCreateDomainEmptyFlagsOverrideDefaults(t *testing.T) {
 	srv := newFakeServer(t, objDomain, objContact)
-	setupHome(t, srv, "contact = c-default\nns = ns1.example.net")
+	setupHome(t, srv, "contact = c-default\ncontacts = admin:required, tech:required\nns = ns1.example.net")
 
 	code, _, errOut := runCLI(t, "create", "domain", "geoff.test", "--ns", "", "--tech", "")
 	if code != 0 {
@@ -366,8 +369,8 @@ func TestCreateDomainEmptyFlagsOverrideDefaults(t *testing.T) {
 		t.Fatalf("empty --ns/--tech were replaced by defaults:\n%s", create)
 	}
 	mustContain(t, "domain create", create, "<domain:registrant>c-default</domain:registrant>")
-	// The equivalent command keeps the empty overrides, so a replay matches.
-	mustContain(t, "stderr", errOut, "--tech ''", "--ns ''", "--registrant c-default")
+	// The equivalent command names the roles sent and keeps the empty ns.
+	mustContain(t, "stderr", errOut, "--contacts registrant,admin", "--ns ''", "--registrant c-default")
 }
 
 func TestCreateContactEmptyFlagsOverridePlaceholders(t *testing.T) {

@@ -88,7 +88,8 @@ tls = true
 user = b
 password = secret #1
 contact = c-1                  # contact for registrant/admin/tech
-contact_roles = registrant, tech   # roles filled on domain create
+contact_roles = registrant, tech   # older form: listed roles required
+contacts = billing:prohibited      # applied on top of contact_roles
 ns = ns1.example.net , ns2.example.net ; nameservers
 email = me@example.net	# email for test contacts
 `
@@ -97,12 +98,12 @@ email = me@example.net	# email for test contacts
 		t.Fatal(err)
 	}
 	want := &Config{
-		User:         "b",
-		Password:     "secret #1", // passwords keep everything after "="
-		Contact:      "c-1",
-		ContactRoles: []string{"registrant", "tech"},
-		NS:           []string{"ns1.example.net", "ns2.example.net"},
-		Email:        "me@example.net",
+		User:     "b",
+		Password: "secret #1", // passwords keep everything after "="
+		Contact:  "c-1",
+		Contacts: policySpec{"registrant": required, "admin": optional, "tech": required, "billing": prohibited},
+		NS:       []string{"ns1.example.net", "ns2.example.net"},
+		Email:    "me@example.net",
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("got %+v\nwant %+v", cfg, want)
@@ -112,8 +113,8 @@ email = me@example.net	# email for test contacts
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(cfg.ContactRoles, defaultContactRoles) {
-		t.Fatalf("default roles = %v", cfg.ContactRoles)
+	if len(cfg.Contacts) != 0 {
+		t.Fatalf("profile without contact keys has policy %v", cfg.Contacts)
 	}
 
 	if _, err := parseConfig(strings.NewReader(ini), "missing"); err == nil {
