@@ -40,7 +40,7 @@ Create domain geoff.test  (profile: default)
   tech         –  (optional, not sent)
   billing      –  (optional, not sent)
   nameservers  –
-  authInfo     q7#Rk2pX!m9Lw4Za  (generated)
+  authInfo     q7#Rk2pX!m9Lw4Za_Tn8e?Vb3Hs  (generated)
   fee          12.00 USD  (fee check)
 
 > Yes, create it

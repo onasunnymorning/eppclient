@@ -70,6 +70,7 @@ type reviewRow struct {
 	label string
 	value string
 	note  string // where the value came from, e.g. "generated"
+	warn  bool   // highlight the note: something needs attention
 }
 
 // printReview prints the values a command is about to send.
@@ -85,7 +86,10 @@ func printReview(title string, rows []reviewRow) {
 			value = "–"
 		}
 		fmt.Fprintf(os.Stderr, "  %-*s  %s", width, r.label, value)
-		if r.note != "" {
+		switch {
+		case r.note != "" && r.warn:
+			color.Fprintf(os.Stderr, "  @{y}(%s)", r.note)
+		case r.note != "":
 			color.Fprintf(os.Stderr, "  @{.}(%s)", r.note)
 		}
 		fmt.Fprintln(os.Stderr)
@@ -113,4 +117,9 @@ func reviewChoice(proceedLabel string, extra ...huh.Option[string]) string {
 		abort()
 	}
 	return choice
+}
+
+// row is a review line with an informational note.
+func row(label, value, note string) reviewRow {
+	return reviewRow{label: label, value: value, note: note}
 }

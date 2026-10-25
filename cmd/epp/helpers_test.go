@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"path/filepath"
 
 	epp "github.com/onasunnymorning/eppclient"
@@ -26,6 +27,19 @@ func TestGenAuthInfo(t *testing.T) {
 			t.Fatalf("duplicate authInfo %q", a)
 		}
 		seen[a] = true
+	}
+}
+
+// The authInfo must carry at least 128 bits of randomness: one character
+// from each class plus authLength-4 from the full set.
+func TestAuthInfoEntropy(t *testing.T) {
+	all := float64(len(lowerChars + upperChars + digitChars + symbolChars))
+	bits := float64(authLength-4) * math.Log2(all)
+	for _, class := range []string{lowerChars, upperChars, digitChars, symbolChars} {
+		bits += math.Log2(float64(len(class)))
+	}
+	if bits < 128 {
+		t.Fatalf("generated authInfo has about %.0f bits, want at least 128", bits)
 	}
 }
 

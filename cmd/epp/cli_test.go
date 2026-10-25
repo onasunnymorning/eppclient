@@ -20,6 +20,7 @@ type fakeServer struct {
 	objects  []string
 	taken    map[string]bool
 	fees     []string // create fee items quoted by domain:check
+	failCode int      // when set, domain:create fails with this result code
 	mu       sync.Mutex
 	requests []string
 }
@@ -112,6 +113,9 @@ func (s *fakeServer) respond(req string) string {
 		name := reDomainName.FindStringSubmatch(req)[1]
 		if s.taken[name] {
 			return eppResponse(2302, "")
+		}
+		if s.failCode != 0 {
+			return eppResponse(s.failCode, "")
 		}
 		return eppResponse(1000, `<resData><domain:creData xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">`+
 			`<domain:name>`+name+`</domain:name><domain:crDate>2026-10-24T00:00:00.0Z</domain:crDate>`+
@@ -411,4 +415,26 @@ func TestCreateDomainMultipleFeeItemsNotAutoAccepted(t *testing.T) {
 		t.Fatalf("fee sent for a multi-item quote:\n%s", create)
 	}
 	mustContain(t, "stderr", errOut, "quoted 2 create fee items", "112.00 USD (100.00 + 12.00)", "fee check, not sent")
+}
+
+func TestCreateDomainContactHintOnlyForMissingObjects(t *testing.T) {
+	for _, tc := range []struct {
+		code int
+		hint bool
+	}{{2202, false}, {2303, true}} {
+		srv := newFakeServer(t, objDomain, objContact)
+		srv.failCode = tc.code
+		home := setupHome(t, srv, "")
+		if err := writeState(filepath.Join(home, ".epp", "state.json"), stateFile{"default": {Contact: "epp-saved1"}}); err != nil {
+			t.Fatal(err)
+		}
+
+		code, _, errOut := runCLI(t, "create", "domain", "geoff.test")
+		if code != 1 {
+			t.Fatalf("result %d: exit %d, want 1", tc.code, code)
+		}
+		if got := strings.Contains(errOut, "If contact epp-saved1 no longer exists"); got != tc.hint {
+			t.Errorf("result %d: contact hint shown = %v, want %v\n%s", tc.code, got, tc.hint, errOut)
+		}
+	}
 }
