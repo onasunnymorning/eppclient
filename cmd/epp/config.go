@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 )
@@ -17,14 +17,29 @@ type Config struct {
 	Cert     string
 	Key      string
 	CACert   string
+
+	// Optional defaults used when the matching flag is omitted.
+	Contact      string   // contact ID for every role in ContactRoles
+	ContactRoles []string // roles to fill on domain create
+	NS           []string // nameservers for domain create
+	Email        string   // email for generated test contacts
+}
+
+var defaultContactRoles = []string{"registrant", "admin", "tech"}
+
+func credentialsPath() (string, error) {
+	dir, err := eppDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "credentials"), nil
 }
 
 func loadConfig(profile string) (*Config, error) {
-	usr, err := user.Current()
+	path, err := credentialsPath()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(usr.HomeDir, ".epp", "credentials")
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -35,11 +50,16 @@ func loadConfig(profile string) (*Config, error) {
 	}
 	defer f.Close()
 
-	cfg := &Config{}
-	scanner := bufio.NewScanner(f)
+	return parseConfig(f, profile)
+}
+
+// parseConfig reads one profile section from a basic INI file.
+func parseConfig(r io.Reader, profile string) (*Config, error) {
+	cfg := &Config{ContactRoles: defaultContactRoles}
+	found := false
 	currentSection := ""
 
-	// Basic INI parser
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
@@ -48,6 +68,7 @@ func loadConfig(profile string) (*Config, error) {
 
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			currentSection = line[1 : len(line)-1]
+			found = found || currentSection == profile
 			continue
 		}
 
@@ -55,12 +76,11 @@ func loadConfig(profile string) (*Config, error) {
 			continue
 		}
 
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
+		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
 
 		switch key {
 		case "user":
@@ -77,6 +97,16 @@ func loadConfig(profile string) (*Config, error) {
 			cfg.Key = val
 		case "ca":
 			cfg.CACert = val
+		case "contact":
+			cfg.Contact = stripComment(val)
+		case "contact_roles":
+			if roles := parseList(stripComment(val)); len(roles) > 0 {
+				cfg.ContactRoles = roles
+			}
+		case "ns":
+			cfg.NS = parseList(stripComment(val))
+		case "email":
+			cfg.Email = stripComment(val)
 		}
 	}
 
@@ -84,6 +114,9 @@ func loadConfig(profile string) (*Config, error) {
 		return nil, err
 	}
 
+	if !found {
+		return nil, fmt.Errorf("profile %s not found (profiles: %s)", profile, strings.Join(listProfiles(), ", "))
+	}
 	if cfg.User == "" {
 		return nil, fmt.Errorf("user not found in profile %s", profile)
 	}
@@ -91,24 +124,65 @@ func loadConfig(profile string) (*Config, error) {
 	return cfg, nil
 }
 
+// stripComment removes a trailing "# comment" (or "; comment") preceded by
+// whitespace. Only used for the default keys: contact IDs, roles, host names
+// and email addresses can't contain such a sequence, while passwords can.
+func stripComment(val string) string {
+	for i := 0; i < len(val); i++ {
+		if (val[i] == '#' || val[i] == ';') && (i == 0 || val[i-1] == ' ' || val[i-1] == '\t') {
+			return strings.TrimSpace(val[:i])
+		}
+	}
+	return val
+}
+
+// listProfiles returns the section names in the credentials file.
+func listProfiles() []string {
+	path, err := credentialsPath()
+	if err != nil {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var profiles []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			profiles = append(profiles, line[1:len(line)-1])
+		}
+	}
+	return profiles
+}
+
 const configTemplate = `[default]
 # Your EPP server address (e.g., epp.example.com:700)
-addr = 
-user = 
-password = 
+addr =
+user =
+password =
 tls = true
 
 # Optional: TLS client certificate and key
-# cert = 
-# key = 
+# cert =
+# key =
 
 # Optional: Custom CA certificate for server validation
-# ca = 
+# ca =
+
+# Optional defaults, used when the matching flag is left out:
+# contact = my-contact-id          # contact for registrant/admin/tech
+# contact_roles = registrant,admin,tech
+# ns = ns1.example.net,ns2.example.net
+# email = me@example.net           # email for generated test contacts
 
 [ote]
 addr = epp.ote.registry.example:700
-user = 
-password = 
+user =
+password =
 tls = true
 `
 
