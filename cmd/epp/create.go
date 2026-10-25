@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,7 @@ type domainCreateFlags struct {
 	period                           int
 	auth, ns, phase, fee, currency   string
 	registrant, admin, tech, billing string
+	contacts                         string // --contacts: roles to send
 
 	// given reports whether a flag was passed, even with an empty value:
 	// --ns '' means "no nameservers", not "use the profile default".
@@ -35,21 +37,20 @@ type domainCreateFlags struct {
 
 // domainCreate is what will be sent, plus notes on where values came from.
 type domainCreate struct {
-	name       string
-	period     int
-	auth       string
-	registrant string
-	contacts   map[string]string // admin, tech, billing
-	ns         []string
-	phase      string
-	fee        string // sent with the create
-	currency   string
-	price      string            // from the fee check, shown only
-	notes      map[string]string // field -> "generated", "profile default", ...
+	name     string
+	period   int
+	auth     string
+	contacts map[string]string // role -> contact ID, for every role that is sent
+	policies policySet         // contact policy per role
+	ns       []string
+	phase    string
+	fee      string // sent with the create
+	currency string
+	price    string            // from the fee check, shown only
+	notes    map[string]string // field -> "generated", "profile default", ...
 
-	savedContact string          // default contact taken from ~/.epp/state.json, if any
-	defaultRoles map[string]bool // roles a default contact fills when not given
-	defaultNS    bool            // the profile has default nameservers
+	savedContact string // default contact taken from ~/.epp/state.json, if any
+	defaultNS    bool   // the profile has default nameservers
 }
 
 var contactTypes = []string{"admin", "tech", "billing"}
@@ -63,20 +64,29 @@ func newCreateDomainCmd() *cobra.Command {
 
   period       1 year
   authInfo     a random password
-  contacts     the profile's default contact (contact = ... in ~/.epp/credentials).
+  contacts     roles the contact policy marks required are sent with the
+               profile's default contact (contact = ... in ~/.epp/credentials).
                Without one, you're asked once to create a test contact or give
                an existing ID, and the answer is remembered for the profile.
-               Which roles get filled is set by contact_roles (default
-               registrant,admin,tech). Skipped if the registry has no contacts.
   nameservers  the profile's ns = ... setting, or none
   fee          from a fee check, when the registry supports fee-1.0
+
+Contact policy says per role (registrant, admin, tech, billing) whether it
+is required, optional or prohibited. It comes from, in increasing priority:
+the built-in default (registrant required, the rest optional), the
+registry's greeting (no contact object: all prohibited), contacts = ... in the
+profile, and [tld] sections in ~/.epp/tlds. Optional and prohibited roles are
+left out unless you ask for them with --contacts or a role flag.
 
 You then get a summary to confirm or edit before anything is sent.
 With -y the defaults are used without questions.`,
 		Example: `  epp create domain geoff.test
   epp create domain geoff.test --period 2 --ns ns1.example.net,ns2.example.net
   epp create domain geoff.test --registrant c-123 --auth 'S3cret!pw' -y
-  epp create domain geoff.test --phase sunrise --fee 100.00 --currency USD`,
+  epp create domain geoff.test --phase sunrise --fee 100.00 --currency USD
+  epp create domain geoff.test --contacts none
+  epp create domain geoff.test --contacts registrant,tech
+  epp create domain geoff.test --contacts all --billing c-99`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			fl.given = func(name string) bool {
@@ -89,10 +99,13 @@ With -y the defaults are used without questions.`,
 	f := cmd.Flags()
 	f.IntVar(&fl.period, "period", 1, "registration period in years")
 	f.StringVar(&fl.auth, "auth", "", "authInfo (default: generated)")
-	f.StringVar(&fl.registrant, "registrant", "", "registrant contact ID (default: profile contact)")
-	f.StringVar(&fl.admin, "admin", "", "admin contact ID (default: profile contact)")
-	f.StringVar(&fl.tech, "tech", "", "tech contact ID (default: profile contact)")
-	f.StringVar(&fl.billing, "billing", "", "billing contact ID (default: profile contact, if in contact_roles)")
+	f.StringVar(&fl.contacts, "contacts", "", "contact roles to send: a list of registrant,admin,tech,billing, or all, or none (default: from contact policy)")
+	f.StringVar(&fl.registrant, "registrant", "", "registrant contact ID; sends the role ('' leaves it out)")
+	f.StringVar(&fl.admin, "admin", "", "admin contact ID; sends the role ('' leaves it out)")
+	f.StringVar(&fl.tech, "tech", "", "tech contact ID; sends the role ('' leaves it out)")
+	f.StringVar(&fl.billing, "billing", "", "billing contact ID; sends the role ('' leaves it out)")
+	_ = cmd.RegisterFlagCompletionFunc("contacts", cobra.FixedCompletions(
+		append([]string{"none", "all"}, contactRoles...), cobra.ShellCompDirectiveNoFileComp))
 	f.StringVar(&fl.ns, "ns", "", "comma separated nameservers (default: profile ns)")
 	f.StringVar(&fl.phase, "phase", "", "launch phase (e.g., sunrise)")
 	f.StringVar(&fl.fee, "fee", "", "fee to accept (default: from fee check)")
@@ -142,7 +155,7 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 		"admin":      fl.admin,
 		"tech":       fl.tech,
 		"billing":    fl.billing,
-	}, fl.given)
+	}, fl)
 
 	d.check(c, true)
 
@@ -177,7 +190,13 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 		}
 	}
 
-	res, err := c.CreateDomain(d.name, d.period, "y", d.auth, d.registrant, d.contacts, d.ns, ext)
+	others := map[string]string{}
+	for _, t := range contactTypes {
+		if id := d.contacts[t]; id != "" {
+			others[t] = id
+		}
+	}
+	res, err := c.CreateDomain(d.name, d.period, "y", d.auth, d.contacts["registrant"], others, d.ns, ext)
 	if err != nil {
 		logif(err)
 		if d.savedContact != "" {
@@ -193,61 +212,82 @@ func runCreateDomain(name string, fl *domainCreateFlags) {
 	printEquivalent(d.args()...)
 }
 
-// setContacts uses the contact IDs given as flags and fills the roles in
-// contact_roles that weren't given with the profile's default contact.
-// A role given as an empty flag stays empty.
-func (d *domainCreate) setContacts(c *epp.Conn, ids map[string]string, given func(string) bool) {
-	d.defaultRoles = map[string]bool{}
-	if usesContacts(c) {
-		var missing []string
-		for _, role := range cfg.ContactRoles {
-			if _, known := ids[role]; !known {
-				warnf("Ignoring unknown role %q in contact_roles", role)
-				continue
-			}
-			d.defaultRoles[role] = true
-			if !given(role) {
-				missing = append(missing, role)
-			}
-		}
+// setContacts decides which contact roles to send, and with which IDs. A
+// role given as a flag is sent with that ID (an empty flag leaves it out).
+// Otherwise --contacts picks the roles, or else the contact policy does:
+// required roles are sent. Roles sent without an ID get the default contact.
+func (d *domainCreate) setContacts(c *epp.Conn, ids map[string]string, fl *domainCreateFlags) {
+	tlds, err := loadTLDPolicies()
+	fatalif(err)
+	d.policies = contactPolicies(d.name, usesContacts(c), cfg.Contacts, tlds)
 
-		if len(missing) > 0 {
-			id, source := defaultContact()
-			if id == "" {
-				id, source = pickDefaultContact(c), "new default"
-			}
-			if source == "saved default" {
-				d.savedContact = id
-			}
-			for _, role := range missing {
-				ids[role] = id
-				d.notes[role] = source
-			}
+	var include map[string]bool
+	if fl.given("contacts") {
+		include, err = parseRoleList(fl.contacts)
+		fatalif(err)
+	}
+
+	var needDefault []string
+	for _, role := range contactRoles {
+		var send bool
+		switch {
+		case fl.given(role):
+			send = ids[role] != ""
+		case include != nil:
+			send = include[role]
+		default:
+			send = d.policies[role].policy == required
+		}
+		switch {
+		case !send:
+		case ids[role] == "":
+			needDefault = append(needDefault, role)
+		default:
+			d.contacts[role] = ids[role]
 		}
 	}
 
-	d.registrant = ids["registrant"]
-	for _, t := range contactTypes {
-		if ids[t] != "" {
-			d.contacts[t] = ids[t]
+	if len(needDefault) > 0 {
+		id, source := defaultContact()
+		if id == "" {
+			id, source = pickDefaultContact(c, needDefault), "new default"
+		}
+		if source == "saved default" {
+			d.savedContact = id
+		}
+		for _, role := range needDefault {
+			d.contacts[role] = id
+			d.notes[role] = source
+		}
+	}
+
+	for _, role := range contactRoles {
+		p := d.policies[role]
+		sent := d.contacts[role] != ""
+		switch {
+		case sent && p.policy == prohibited:
+			warnf("The %s contact is %s, but will be sent.", role, p)
+		case !sent && p.policy == required:
+			warnf("The %s contact is %s, but won't be sent.", role, p)
 		}
 	}
 }
 
 // pickDefaultContact is used when the profile has no default contact yet.
 // The result is saved so later runs don't ask again.
-func pickDefaultContact(c *epp.Conn) string {
+func pickDefaultContact(c *epp.Conn, roles []string) string {
 	if !interactive() {
 		if !opts.yes {
-			fatalf("profile %q has no default contact.\n"+
-				"Pass --registrant/--admin/--tech, set contact = <id> in ~/.epp/credentials,\n"+
-				"or add -y to create a test contact", opts.profile)
+			fatalf("profile %q has no default contact (needed for %s).\n"+
+				"Pass contact IDs (--registrant, --admin, ...), leave roles out with --contacts,\n"+
+				"set contact = <id> in ~/.epp/credentials, or add -y to create a test contact",
+				opts.profile, strings.Join(roles, ", "))
 		}
 		return createTestContact(c)
 	}
 
 	choice := choose(
-		fmt.Sprintf("Profile %q has no default contact (needed for %s)", opts.profile, strings.Join(cfg.ContactRoles, ", ")),
+		fmt.Sprintf("Profile %q has no default contact (needed for %s)", opts.profile, strings.Join(roles, ", ")),
 		huh.NewOption("Create a test contact and use it from now on", "create"),
 		huh.NewOption("Use an existing contact ID from now on", "existing"),
 	)
@@ -382,14 +422,7 @@ func firstNonEmpty(values ...string) string {
 
 func (d *domainCreate) rows() []reviewRow {
 	rows := []reviewRow{{label: "period", value: fmt.Sprintf("%dy", d.period)}}
-	if d.registrant != "" {
-		rows = append(rows, reviewRow{"registrant", d.registrant, d.notes["registrant"]})
-	}
-	for _, t := range contactTypes {
-		if id := d.contacts[t]; id != "" {
-			rows = append(rows, reviewRow{t, id, d.notes[t]})
-		}
-	}
+	rows = append(rows, d.contactRows()...)
 	rows = append(rows,
 		reviewRow{"nameservers", strings.Join(d.ns, ", "), d.notes["ns"]},
 		reviewRow{"authInfo", d.auth, d.notes["auth"]},
@@ -407,22 +440,75 @@ func (d *domainCreate) rows() []reviewRow {
 	return rows
 }
 
+// contactRows shows every role with its policy, including roles not sent.
+func (d *domainCreate) contactRows() []reviewRow {
+	// A registry or TLD without contacts gets a single line.
+	if len(d.contacts) == 0 {
+		first := d.policies[contactRoles[0]]
+		same := true
+		for _, role := range contactRoles {
+			same = same && d.policies[role] == first
+		}
+		if same && first.policy == prohibited {
+			return []reviewRow{{"contacts", "none", first.String()}}
+		}
+	}
+
+	var rows []reviewRow
+	for _, role := range contactRoles {
+		p := d.policies[role]
+		id := d.contacts[role]
+		note := p.String()
+		switch {
+		case id == "" && p.policy != prohibited:
+			note += ", not sent"
+		case id != "" && p.policy == prohibited:
+			note += ", sent anyway"
+		}
+		if src := d.notes[role]; id != "" && src != "" {
+			note += ", " + src
+		}
+		rows = append(rows, reviewRow{role, id, note})
+	}
+	return rows
+}
+
 // edit lets the user change the values; it reports whether the period changed.
 func (d *domainCreate) edit() (periodChanged bool) {
+	// First pick which contacts to send, then edit the values.
+	var selected []string
+	var options []huh.Option[string]
+	for _, role := range contactRoles {
+		options = append(options, huh.NewOption(fmt.Sprintf("%-10s  %s", role, d.policies[role]), role))
+		if d.contacts[role] != "" {
+			selected = append(selected, role)
+		}
+	}
+	runForm(huh.NewMultiSelect[string]().
+		Title("Contacts to send").
+		Description("space toggles, enter continues").
+		Options(options...).
+		Value(&selected))
+
+	defaultID, _ := defaultContact()
 	period := strconv.Itoa(d.period)
-	registrant := d.registrant
-	contacts := map[string]*string{}
 	ns := strings.Join(d.ns, ",")
 	auth := d.auth
 
 	fields := []huh.Field{
 		huh.NewInput().Title("Period (years)").Value(&period).Validate(validPeriod),
-		huh.NewInput().Title("Registrant").Value(&registrant),
 	}
-	for _, t := range contactTypes {
-		v := d.contacts[t]
-		contacts[t] = &v
-		fields = append(fields, huh.NewInput().Title(strings.ToUpper(t[:1])+t[1:]+" contact").Value(&v))
+	ids := map[string]*string{}
+	for _, role := range contactRoles {
+		if !slices.Contains(selected, role) {
+			continue
+		}
+		v := d.contacts[role]
+		if v == "" {
+			v = defaultID
+		}
+		ids[role] = &v
+		fields = append(fields, huh.NewInput().Title(strings.ToUpper(role[:1])+role[1:]+" contact").Value(&v).Validate(notEmpty))
 	}
 	fields = append(fields,
 		huh.NewInput().Title("Nameservers").Description("comma separated").Value(&ns),
@@ -440,15 +526,16 @@ func (d *domainCreate) edit() (periodChanged bool) {
 	periodChanged = p != d.period
 	d.period = p
 
-	changed("registrant", d.registrant, registrant)
-	d.registrant = strings.TrimSpace(registrant)
-	for _, t := range contactTypes {
-		v := strings.TrimSpace(*contacts[t])
-		changed(t, d.contacts[t], v)
+	for _, role := range contactRoles {
+		v := ""
+		if id, ok := ids[role]; ok {
+			v = strings.TrimSpace(*id)
+		}
+		changed(role, d.contacts[role], v)
 		if v == "" {
-			delete(d.contacts, t)
+			delete(d.contacts, role)
 		} else {
-			d.contacts[t] = v
+			d.contacts[role] = v
 		}
 	}
 	changed("ns", strings.Join(d.ns, ","), ns)
@@ -466,18 +553,24 @@ func validPeriod(s string) error {
 	return nil
 }
 
-// args is the equivalent command line for this create. A field left empty
-// is passed as an empty flag when a default would otherwise fill it.
+// args is the equivalent command line for this create. It names the
+// contact roles sent, and passes empty nameservers when the profile would
+// otherwise fill them in, so a replay doesn't depend on defaults.
 func (d *domainCreate) args() []string {
 	a := []string{"create", "domain", d.name, "--period", strconv.Itoa(d.period)}
-	roles := map[string]string{"registrant": d.registrant}
-	for _, t := range contactTypes {
-		roles[t] = d.contacts[t]
-	}
-	for _, role := range append([]string{"registrant"}, contactTypes...) {
-		if roles[role] != "" || d.defaultRoles[role] {
-			a = append(a, "--"+role, roles[role])
+	var sent []string
+	for _, role := range contactRoles {
+		if d.contacts[role] != "" {
+			sent = append(sent, role)
 		}
+	}
+	if len(sent) == 0 {
+		a = append(a, "--contacts", "none")
+	} else {
+		a = append(a, "--contacts", strings.Join(sent, ","))
+	}
+	for _, role := range sent {
+		a = append(a, "--"+role, d.contacts[role])
 	}
 	if len(d.ns) > 0 || d.defaultNS {
 		a = append(a, "--ns", strings.Join(d.ns, ","))

@@ -19,13 +19,11 @@ type Config struct {
 	CACert   string
 
 	// Optional defaults used when the matching flag is omitted.
-	Contact      string   // contact ID for every role in ContactRoles
-	ContactRoles []string // roles to fill on domain create
-	NS           []string // nameservers for domain create
-	Email        string   // email for generated test contacts
+	Contact  string     // default contact ID for roles that get sent
+	Contacts policySpec // contact policy per role (contacts = ...)
+	NS       []string   // nameservers for domain create
+	Email    string     // email for generated test contacts
 }
-
-var defaultContactRoles = []string{"registrant", "admin", "tech"}
 
 func credentialsPath() (string, error) {
 	dir, err := eppDir()
@@ -55,8 +53,9 @@ func loadConfig(profile string) (*Config, error) {
 
 // parseConfig reads one profile section from a basic INI file.
 func parseConfig(r io.Reader, profile string) (*Config, error) {
-	cfg := &Config{ContactRoles: defaultContactRoles}
+	cfg := &Config{}
 	found := false
+	var contacts, legacyRoles string
 	currentSection := ""
 
 	scanner := bufio.NewScanner(r)
@@ -99,10 +98,10 @@ func parseConfig(r io.Reader, profile string) (*Config, error) {
 			cfg.CACert = val
 		case "contact":
 			cfg.Contact = stripComment(val)
-		case "contact_roles":
-			if roles := parseList(stripComment(val)); len(roles) > 0 {
-				cfg.ContactRoles = roles
-			}
+		case "contacts":
+			contacts = stripComment(val)
+		case "contact_roles": // older form of contacts
+			legacyRoles = stripComment(val)
 		case "ns":
 			cfg.NS = parseList(stripComment(val))
 		case "email":
@@ -114,6 +113,11 @@ func parseConfig(r io.Reader, profile string) (*Config, error) {
 		return nil, err
 	}
 
+	var err error
+	if cfg.Contacts, err = profileContactPolicy(contacts, legacyRoles); err != nil {
+		return nil, fmt.Errorf("profile %s: %w", profile, err)
+	}
+
 	if !found {
 		return nil, fmt.Errorf("profile %s not found (profiles: %s)", profile, strings.Join(listProfiles(), ", "))
 	}
@@ -122,6 +126,31 @@ func parseConfig(r io.Reader, profile string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// profileContactPolicy combines the contacts key with the older
+// contact_roles key, whose listed roles are required and the rest optional.
+func profileContactPolicy(contacts, legacyRoles string) (policySpec, error) {
+	spec := policySpec{}
+	if roles := parseList(legacyRoles); len(roles) > 0 {
+		for _, r := range contactRoles {
+			spec[r] = optional
+		}
+		for _, r := range roles {
+			if !isContactRole(r) {
+				return nil, fmt.Errorf("unknown role %q in contact_roles", r)
+			}
+			spec[r] = required
+		}
+	}
+	extra, err := parsePolicySpec(contacts)
+	if err != nil {
+		return nil, err
+	}
+	for r, p := range extra {
+		spec[r] = p
+	}
+	return spec, nil
 }
 
 // stripComment removes a trailing "# comment" (or "; comment") preceded by
@@ -173,11 +202,16 @@ tls = true
 # Optional: Custom CA certificate for server validation
 # ca =
 
-# Optional defaults, used when the matching flag is left out:
-# contact = my-contact-id          # contact for registrant/admin/tech
-# contact_roles = registrant,admin,tech
+# Optional defaults, used when the matching flag is left out.
+# Default contact for every role that gets sent:
+# contact = my-contact-id
+# Contact policy per role (required, optional or prohibited); per-TLD
+# policies go in ~/.epp/tlds:
+# contacts = registrant:required, admin:optional, tech:optional, billing:optional
+# Nameservers for domain create:
 # ns = ns1.example.net,ns2.example.net
-# email = me@example.net           # email for generated test contacts
+# Email for generated test contacts:
+# email = me@example.net
 
 [ote]
 addr = epp.ote.registry.example:700

@@ -35,9 +35,10 @@ epp create domain geoff.test
 ```text
 Create domain geoff.test  (profile: default)
   period       1y
-  registrant   epp-k3f9a2  (saved default)
-  admin        epp-k3f9a2  (saved default)
-  tech         epp-k3f9a2  (saved default)
+  registrant   epp-k3f9a2  (required, saved default)
+  admin        –  (optional, not sent)
+  tech         –  (optional, not sent)
+  billing      –  (optional, not sent)
   nameservers  –
   authInfo     q7#Rk2pX!m9Lw4Za  (generated)
   fee          12.00 USD  (fee check)
@@ -81,6 +82,11 @@ epp create domain example.com -y
 epp create domain example.com --period 2 --ns ns1.example.net,ns2.example.net
 epp create domain example.com --registrant c-1 --admin c-2 --tech c-2 --auth 'S3cret!pw'
 epp create domain example.com --phase sunrise --fee 10.00 --currency USD
+
+# Choose which contact roles to send (default: from the contact policy)
+epp create domain example.com --contacts none
+epp create domain example.com --contacts registrant,tech
+epp create domain example.com --contacts all --billing c-99
 
 # Renew (fetches the current expiry if --exp is omitted)
 epp renew domain example.com --period 1
@@ -134,15 +140,53 @@ user = my-registrar
 password = ...
 tls = true
 
-contact = my-contact-id                 # contact for registrant/admin/tech
-contact_roles = registrant,admin,tech   # roles filled on domain create
+contact = my-contact-id                 # default contact for roles that get sent
+contacts = billing:prohibited           # contact policy for this profile
 ns = ns1.example.net,ns2.example.net    # nameservers for domain create
 email = me@example.net                  # email for generated test contacts
 ```
 
 A default contact chosen or created through a prompt is stored in
 `~/.epp/state.json`. A `contact` set in the credentials file takes precedence.
-Registries that don't use contacts (per their greeting) are never asked for one.
+
+#### Contact policies
+
+TLD policies say, per contact role, whether it is **required**, **optional**
+or **prohibited**. `epp create domain` follows that:
+
+- **required:** sent, with the default contact unless you give an ID
+- **optional:** left out, unless you ask for it
+- **prohibited:** left out. If you ask for it anyway, you get a warning and
+  it is sent, so you can test how the registry rejects it.
+
+Put per-TLD policies in `~/.epp/tlds`, shared by all profiles:
+
+```ini
+[example]
+contacts = registrant:required, admin:prohibited, tech:optional, billing:prohibited
+
+[co.uk]
+contacts = registrant:required, admin:optional, tech:optional, billing:prohibited
+
+[thin]
+contacts = none
+```
+
+A role not mentioned keeps the policy from the layer below. `none` prohibits
+every role, `all` requires every role, and a bare role name means required.
+The policy for each role is worked out in this order, later entries winning:
+
+1. built-in default: registrant required; admin, tech and billing optional
+2. the registry's greeting: no contact object means every role is prohibited
+3. `contacts = ...` in the profile (the older `contact_roles = ...` still
+   works: listed roles are required, the rest optional)
+4. `~/.epp/tlds`, matched on the domain's suffix (`uk`, then `co.uk`)
+
+For a single command, `--contacts` picks exactly which roles to send
+(`registrant,tech`, `all` or `none`), and `--registrant`, `--admin`, `--tech`
+and `--billing` send that role with the given ID. An empty value, such as
+`--tech ''`, leaves that role out. The review screen shows every role with its
+policy, and **Edit values** lets you tick contacts on or off.
 
 ## Library Installation
 
